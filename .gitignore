@@ -1,0 +1,27 @@
+# System
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+dist/
+unpackage/
+venv/
+__pycache__/
+
+# Logs & Temp
+*.log
+*.tmp
+.idea/
+.vscode/
+
+# Project Data
+photo-timeline-backend/uploads/
+photo-timeline-backend/timeline.db
+photo-timeline-backend/timeline.db-journal
+
+# Environment
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
