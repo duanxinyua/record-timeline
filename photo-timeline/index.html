@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>照片时间轴</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg-noise" aria-hidden="true"></div>
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="kicker">Photo Timeline</p>
+        <h1>横向照片时间轴</h1>
+        <p class="sub">
+          上传照片后自动加入时间轴，支持横向滚动与本地保存。
+        </p>
+      </div>
+      <form id="upload-form" class="upload-card">
+        <label class="field">
+          <span>时间</span>
+          <input id="date-input" type="datetime-local" />
+        </label>
+        <label class="field">
+          <span>标题（可选）</span>
+          <input
+            id="caption-input"
+            type="text"
+            placeholder="例如：毕业旅行 / 项目发布"
+          />
+        </label>
+        <label class="field">
+          <span>照片</span>
+          <input
+            id="file-input"
+            type="file"
+            accept="image/*"
+            multiple
+            required
+          />
+        </label>
+        <div class="actions">
+          <button type="submit" class="btn primary">上传到时间轴</button>
+          <button type="button" id="clear-btn" class="btn ghost">清空</button>
+        </div>
+        <p class="hint">
+          仅保存在浏览器本地（LocalStorage），更换浏览器或清除缓存会丢失。
+        </p>
+      </form>
+    </header>
+
+    <main class="timeline-shell">
+      <div class="timeline-header">
+        <h2>时间轴</h2>
+        <div class="nav">
+          <button type="button" id="scroll-left" class="btn icon">
+            ◀
+          </button>
+          <button type="button" id="scroll-right" class="btn icon">
+            ▶
+          </button>
+        </div>
+      </div>
+
+      <section class="timeline" aria-live="polite">
+        <div class="axis" aria-hidden="true"></div>
+        <ol id="timeline-track" class="timeline-track"></ol>
+      </section>
+    </main>
+
+    <template id="timeline-item">
+      <li class="timeline-item">
+        <div class="dot"></div>
+        <article class="card">
+          <img class="photo" alt="" />
+          <div class="card-body">
+            <p class="date"></p>
+            <h3 class="title"></h3>
+            <button class="btn text delete" type="button">删除</button>
+          </div>
+        </article>
+      </li>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
