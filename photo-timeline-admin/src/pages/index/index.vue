@@ -184,10 +184,7 @@ const adminKey = ref(''); // Store the API Key
 
 // Dynamic API Base URL
 const getApiBaseUrl = () => {
-    // In H5, use the current hostname to find the backend
-    // Assuming backend is always on port 8000 on the same machine
-    const host = window.location.hostname;
-    return `http://${host}:8000`;
+    return 'http://api.hetao.us';
 };
 
 const API_BASE = getApiBaseUrl();

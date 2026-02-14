@@ -19,7 +19,7 @@
     
 2.  **创建站点**:
     *   宝塔 **网站 -> 添加站点**。
-    *   域名: `api.timeline.com` (或者直接用 IP).
+    *   域名: `api.hetao.us` (或者直接用 IP).
     *   PHP版本: 选择 7.4 或 8.0+.
     *   **伪静态配置 (Nginx)**:
         *   如果不配置伪静态，API 路径可能会失效（除非用 index.php/...）。
@@ -47,7 +47,7 @@
 ```javascript
 const getApiBaseUrl = () => {
     // 指向新的 PHP 站点地址
-    return 'http://api.timeline.com'; 
+    return 'http://api.hetao.us'; 
     // 或者如果是本地测试 PHPStudy:
     // return 'http://localhost/test/duanxinyu/photo-timeline-backend';
 };
