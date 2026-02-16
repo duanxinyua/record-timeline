@@ -4,8 +4,7 @@ Thumbs.db
 
 # Dependencies
 node_modules/
-dist/
-unpackage/
+
 venv/
 __pycache__/
 
