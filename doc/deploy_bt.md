@@ -33,7 +33,26 @@
         ```
     *   **目录权限**:
         *   确保 `uploads` 目录和 `timeline.db` 文件有写入权限 (755 或 777, 用户 www)。
+       
+## 4. 权限设置 (非常重要！)
 
+为了确保程序能正常上传文件和写入数据库，请务必执行以下权限设置：
+
+1.  **数据库权限**: SQLite 数据库不仅需要文件可写，**所在的文件夹也必须可写**。
+    *   在宝塔文件管理中，找到后端目录 `photo-timeline-backend`。
+    *   将整个目录的权限设置为 `755` 或 `777` (如果遇到 `readonly database` 错误，请尝试 `777`)。
+    *   **所有者**必须设置为 `www` (宝塔默认 Web 用户)。
+
+2.  **上传目录权限**:
+    *   确保 `photo-timeline-backend/uploads` 目录存在且权限为 `777`。
+
+```bash
+# 自动修复命令（在终端执行）
+chown -R www:www /www/wwwroot/hetao.us/photo-timeline-backend
+chmod -R 775 /www/wwwroot/hetao.us/photo-timeline-backend
+chmod -R 777 /www/wwwroot/hetao.us/photo-timeline-backend/uploads
+chmod 666 /www/wwwroot/hetao.us/photo-timeline-backend/database.sqlite
+```
 3.  **验证**:
     *   访问 `http://您的域名/` 或 `http://您的域名/index.php`。
     *   应看到 `{"message": "Peanut Timeline Backend (PHP) is Running!"}`.
