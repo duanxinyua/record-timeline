@@ -209,7 +209,7 @@ if (($uri === '/config' || $uri === '/config/') && $method === 'POST') {
     // We update row 1
     $sql = "UPDATE appconfig SET ";
     $params = [];
-    $fields = ['kicker', 'mainTitle', 'subTitle', 'timelineTitle', 'emptyText', 'defaultItemTitle', 'unknownDateText'];
+    $fields = ['appTitle', 'kicker', 'mainTitle', 'subTitle', 'timelineTitle', 'emptyText', 'defaultItemTitle', 'unknownDateText'];
     
     foreach ($fields as $field) {
         if (isset($data[$field])) {

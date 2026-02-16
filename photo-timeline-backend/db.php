@@ -31,6 +31,7 @@ try {
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS appconfig (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            appTitle TEXT DEFAULT '花生',
             kicker TEXT DEFAULT 'Peanut',
             mainTitle TEXT DEFAULT '精彩时刻',
             subTitle TEXT DEFAULT '记录属于你的花生时刻，支持横向滚动与本地保存。',
@@ -40,6 +41,19 @@ try {
             unknownDateText TEXT DEFAULT '未知时间'
         )
     ");
+
+    // Migration: Check if appTitle exists (for existing dbs)
+    $cols = $pdo->query("PRAGMA table_info(appconfig)")->fetchAll();
+    $hasAppTitle = false;
+    foreach ($cols as $col) {
+        if ($col['name'] === 'appTitle') {
+            $hasAppTitle = true;
+            break;
+        }
+    }
+    if (!$hasAppTitle) {
+        $pdo->exec("ALTER TABLE appconfig ADD COLUMN appTitle TEXT DEFAULT '花生'");
+    }
 
     // Seed Config if empty
     $stmt = $pdo->query("SELECT COUNT(*) FROM appconfig");
