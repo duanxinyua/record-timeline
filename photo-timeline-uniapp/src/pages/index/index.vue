@@ -65,7 +65,7 @@ const items = ref([]);
 
 // Dynamic API Base URL
 const getApiBaseUrl = () => {
-    return 'http://api.hetao.us';
+    return 'https://api.hetao.us';
 };
 
 const API_BASE = getApiBaseUrl();

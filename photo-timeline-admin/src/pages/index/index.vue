@@ -184,7 +184,7 @@ const adminKey = ref(''); // Store the API Key
 
 // Dynamic API Base URL
 const getApiBaseUrl = () => {
-    return 'http://api.hetao.us';
+    return 'https://api.hetao.us';
 };
 
 const API_BASE = getApiBaseUrl();
@@ -855,41 +855,7 @@ onMounted(() => {
   font-weight: bold;
 }
 
-// Lifecycle
-onLoad((options) => {
-    // Magic Link Auth
-    if (options && options.key) {
-        uni.setStorageSync('peanut_api_key', options.key);
-        adminKey.value = options.key;
-        uni.showToast({ title: '管理员模式已激活', icon: 'none' });
-    } else {
-        // Try load existing key
-        const stored = uni.getStorageSync('peanut_api_key');
-        if (stored) {
-            adminKey.value = stored;
-        }
-    }
-});
 
-onMounted(() => {
-  const now = new Date();
-  // Format YYYY-MM-DD
-  const y = now.getFullYear();
-  const m = String(now.getMonth()+1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  dateValue.value = `${y}-${m}-${d}`;
-  
-  // Format HH:MM
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
-  timeValue.value = `${hh}:${mm}`;
-  
-  fetchConfig();
-  load();
-});
-
-
-</script>
 
 <style>
 /* Page specific styles */
