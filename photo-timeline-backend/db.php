@@ -7,7 +7,11 @@ $uploadDir = __DIR__ . '/uploads';
 
 // Ensure upload directory exists
 if (!file_exists($uploadDir)) {
-    mkdir($uploadDir, 0755, true);
+    if (!@mkdir($uploadDir, 0755, true)) {
+        http_response_code(500);
+        echo json_encode(['error' => "Failed to create upload directory. Check permissions for " . __DIR__]);
+        exit;
+    }
 }
 
 try {

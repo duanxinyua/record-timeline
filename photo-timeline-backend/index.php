@@ -12,6 +12,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
+// Disable display_errors to prevent HTML/text leakage
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
+
+// Custom Error Handler to return JSON
+function jsonErrorHandler($errno, $errstr, $errfile, $errline) {
+    http_response_code(500);
+    echo json_encode(['error' => "Server Error ($errno): $errstr in $errfile:$errline"]);
+    exit;
+}
+set_error_handler("jsonErrorHandler");
+
+// Handle Fatal Errors (Shutdown function)
+register_shutdown_function(function() {
+    $error = error_get_last();
+    if ($error && ($error['type'] === E_ERROR || $error['type'] === E_PARSE || $error['type'] === E_CORE_ERROR || $error['type'] === E_COMPILE_ERROR)) {
+        http_response_code(500);
+        echo json_encode(['error' => "Fatal Error: {$error['message']} in {$error['file']}:{$error['line']}"]);
+    }
+});
+
 require_once 'db.php';
 
 // Simple Router
