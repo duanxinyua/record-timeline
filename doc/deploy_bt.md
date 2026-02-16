@@ -21,12 +21,14 @@
     *   宝塔 **网站 -> 添加站点**。
     *   域名: `api.hetao.us` (或者直接用 IP).
     *   PHP版本: 选择 7.4 或 8.0+.
-    *   **伪静态配置 (Nginx)**:
-        *   如果不配置伪静态，API 路径可能会失效（除非用 index.php/...）。
-        *   请在网站 **设置 -> 伪静态** 中填入：
+        *   **重要**: 必须配置伪静态，否则 API 无法访问 (报 404 或 CORS 错误)。
+        *   您可以直接复制 `photo-timeline-backend/nginx.conf` 文件中的内容。
+        *   或者手动填入：
         ```nginx
         location / {
-            try_files $uri $uri/ /index.php?$query_string;
+            if (!-e $request_filename){
+                rewrite  ^(.*)$  /index.php?s=$1  last;   break;
+            }
         }
         ```
     *   **目录权限**:
