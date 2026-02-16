@@ -320,47 +320,25 @@ const handleUpload = (filePath) => {
     });
 };
 
+const h5ChooseImage = () => {
+    uni.chooseImage({
+        count: 1,
+        sizeType: ['original', 'compressed'],
+        sourceType: ['camera', 'album'], 
+        success: (res) => handleUpload(res.tempFilePaths[0])
+    });
+};
+
+const h5ChooseVideo = () => {
+    uni.chooseVideo({
+        sourceType: ['camera', 'album'], 
+        compressed: true,
+        success: (res) => handleUpload(res.tempFilePath)
+    });
+};
+
 const chooseMedia = () => {
   if (!isAdmin.value) return;
-
-  // #ifdef H5
-  uni.showActionSheet({
-      itemList: ['拍摄照片', '拍摄视频', '从相册选择照片', '从相册选择视频'],
-      success: function (res) {
-          if (res.tapIndex === 0) {
-              // Take Photo
-              uni.chooseImage({
-                  count: 1,
-                  sizeType: ['original', 'compressed'],
-                  sourceType: ['camera'],
-                  success: (res) => handleUpload(res.tempFilePaths[0])
-              });
-          } else if (res.tapIndex === 1) {
-              // Record Video
-              uni.chooseVideo({
-                  sourceType: ['camera'],
-                  compressed: true,
-                  success: (res) => handleUpload(res.tempFilePath)
-              });
-          } else if (res.tapIndex === 2) {
-              // Pick Photo
-              uni.chooseImage({
-                  count: 1,
-                  sizeType: ['original', 'compressed'],
-                  sourceType: ['album'],
-                  success: (res) => handleUpload(res.tempFilePaths[0])
-              });
-          } else if (res.tapIndex === 3) {
-              // Pick Video
-              uni.chooseVideo({
-                  sourceType: ['album'],
-                  compressed: true,
-                  success: (res) => handleUpload(res.tempFilePath)
-              });
-          }
-      }
-  });
-  // #endif
 
   // #ifndef H5
   uni.chooseMedia({
