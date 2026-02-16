@@ -272,6 +272,10 @@ const previewImage = (url) => {
     });
 };
 
+const clearSelection = () => {
+    tempPhotoData.value = null;
+};
+
 const isAdmin = computed(() => {
     return !!adminKey.value;
 });
