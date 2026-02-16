@@ -127,9 +127,7 @@ if ($uri === '/upload' && $method === 'POST') {
     
     if (!in_array(strtolower($ext), $allowed)) {
          http_response_code(400);
-         // Log the rejection for debugging
-         file_put_contents(__DIR__ . '/debug_upload.log', date('Y-m-d H:i:s') . " - Rejected: " . $file['name'] . " (Ext: $ext)\n", FILE_APPEND);
-         
+         // Return the actual received extension to help debugging
          echo json_encode(["detail" => "File type not allowed: .$ext"]);
          exit();
     }
