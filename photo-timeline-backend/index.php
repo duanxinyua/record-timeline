@@ -123,11 +123,13 @@ if ($uri === '/upload' && $method === 'POST') {
 
     $file = $_FILES['file'];
     $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-    $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm', 'heic', 'heif'];
+    $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'mp4', 'mov', 'webm', 'heic', 'heif', 'avi', '3gp', 'm4v'];
     
     if (!in_array(strtolower($ext), $allowed)) {
          http_response_code(400);
-         // Return the actual received extension to help debugging
+         // Log the rejection for debugging
+         file_put_contents(__DIR__ . '/debug_upload.log', date('Y-m-d H:i:s') . " - Rejected: " . $file['name'] . " (Ext: $ext)\n", FILE_APPEND);
+         
          echo json_encode(["detail" => "File type not allowed: .$ext"]);
          exit();
     }
