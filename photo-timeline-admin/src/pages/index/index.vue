@@ -309,20 +309,35 @@ const chooseMedia = () => {
 
   // #ifdef H5
   uni.showActionSheet({
-      itemList: ['拍摄/选择照片', '拍摄/选择视频'],
+      itemList: ['拍摄照片', '拍摄视频', '从相册选择照片', '从相册选择视频'],
       success: function (res) {
           if (res.tapIndex === 0) {
-              // Image
+              // Take Photo
               uni.chooseImage({
                   count: 1,
                   sizeType: ['original', 'compressed'],
-                  sourceType: ['album', 'camera'],
+                  sourceType: ['camera'],
                   success: (res) => handleUpload(res.tempFilePaths[0])
               });
-          } else {
-              // Video
+          } else if (res.tapIndex === 1) {
+              // Record Video
               uni.chooseVideo({
-                  sourceType: ['camera', 'album'],
+                  sourceType: ['camera'],
+                  compressed: true,
+                  success: (res) => handleUpload(res.tempFilePath)
+              });
+          } else if (res.tapIndex === 2) {
+              // Pick Photo
+              uni.chooseImage({
+                  count: 1,
+                  sizeType: ['original', 'compressed'],
+                  sourceType: ['album'],
+                  success: (res) => handleUpload(res.tempFilePaths[0])
+              });
+          } else if (res.tapIndex === 3) {
+              // Pick Video
+              uni.chooseVideo({
+                  sourceType: ['album'],
                   compressed: true,
                   success: (res) => handleUpload(res.tempFilePath)
               });
