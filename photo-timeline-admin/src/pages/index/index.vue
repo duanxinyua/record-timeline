@@ -321,20 +321,36 @@ const handleUpload = (filePath) => {
 };
 
 const h5ChooseImage = () => {
-    uni.chooseImage({
-        count: 1,
-        sizeType: ['original', 'compressed'],
-        sourceType: ['camera', 'album'], 
-        success: (res) => handleUpload(res.tempFilePaths[0])
-    });
+    // #ifdef H5
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    // Remove capture to allow both camera and album
+    input.onchange = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            const blobUrl = URL.createObjectURL(file);
+            handleUpload(blobUrl);
+        }
+    };
+    input.click();
+    // #endif
 };
 
 const h5ChooseVideo = () => {
-    uni.chooseVideo({
-        sourceType: ['camera', 'album'], 
-        compressed: true,
-        success: (res) => handleUpload(res.tempFilePath)
-    });
+    // #ifdef H5
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'video/*';
+    input.onchange = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            const blobUrl = URL.createObjectURL(file);
+            handleUpload(blobUrl);
+        }
+    };
+    input.click();
+    // #endif
 };
 
 const chooseMedia = () => {
