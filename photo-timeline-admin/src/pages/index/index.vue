@@ -37,7 +37,7 @@
         </view>
         <view class="field">
           <text class="label-text">照片</text>
-          <view class="upload-area" @click="chooseMedia">
+          <view class="upload-area">
              <template v-if="tempPhotoData">
                 <video 
                     v-if="isVideo(tempPhotoData.src)"
@@ -52,13 +52,29 @@
                     class="preview-img" 
                     @click.stop="previewImage(tempPhotoData.src)"
                 ></image>
-                <view class="re-upload-tip" @click.stop="chooseMedia">点击更换</view>
+                <view class="re-upload-tip" @click.stop="clearSelection">✕ 清除选择</view>
              </template>
              <template v-else>
-                <view class="upload-placeholder">
+                <!-- #ifdef H5 -->
+                <view class="h5-triggers">
+                    <view class="trigger-btn" @click="h5ChooseImage">
+                        <text class="trigger-icon">📷</text>
+                        <text>照片</text>
+                    </view>
+                    <view class="trigger-divider"></view>
+                    <view class="trigger-btn" @click="h5ChooseVideo">
+                        <text class="trigger-icon">📹</text>
+                        <text>视频</text>
+                    </view>
+                </view>
+                <!-- #endif -->
+                
+                <!-- #ifndef H5 -->
+                <view class="upload-placeholder" @click="chooseMedia">
                    <text class="upload-icon">📷/📹</text>
                    <text>点击拍摄或选择</text>
                 </view>
+                <!-- #endif -->
              </template>
           </view>
         </view>
@@ -675,13 +691,49 @@ onMounted(() => {
   justify-content: center;
   overflow: hidden;
   position: relative;
-  cursor: pointer;
+  /* Removed simple cursor pointer as clicks are inner */
   transition: all 0.3s ease;
 }
 
 .upload-area:hover {
   background: rgba(255, 255, 255, 0.8);
   border-color: var(--accent);
+}
+
+.h5-triggers {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    width: 100%;
+    height: 100%;
+}
+
+.trigger-btn {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 0.9rem;
+    transition: background 0.2s;
+}
+
+.trigger-btn:active {
+    background: rgba(0,0,0,0.05);
+}
+
+.trigger-divider {
+    width: 1px;
+    height: 40%;
+    background: var(--line);
+}
+
+.trigger-icon {
+    font-size: 1.8rem;
+    margin-bottom: 8px;
 }
 
 .upload-placeholder {
