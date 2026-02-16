@@ -123,11 +123,12 @@ if ($uri === '/upload' && $method === 'POST') {
 
     $file = $_FILES['file'];
     $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-    $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+    $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'webm', 'heic', 'heif'];
     
     if (!in_array(strtolower($ext), $allowed)) {
          http_response_code(400);
-         echo json_encode(["detail" => "File must be an image"]);
+         // Return the actual received extension to help debugging
+         echo json_encode(["detail" => "File type not allowed: .$ext"]);
          exit();
     }
 
