@@ -62,5 +62,9 @@ try {
     }
 
 } catch (PDOException $e) {
-    die("Database Connection Failed: " . $e->getMessage());
+} catch (PDOException $e) {
+    http_response_code(500);
+    echo json_encode(['error' => "数据库连接失败 (Database Connection Failed): " . $e->getMessage()]);
+    exit;
+}
 }

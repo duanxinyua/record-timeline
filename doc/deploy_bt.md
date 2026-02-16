@@ -89,5 +89,13 @@ const getApiBaseUrl = () => {
 2.  **文件上传大小限制**:
     *   宝塔 **PHP管理 -> 配置修改**，调整 `upload_max_filesize` 和 `post_max_size` (建议 10M+)。
 
+3.  **上传图片/数据库报错 (Read-only / Permission denied)**:
+    *   **原因**: Web服务器用户 (通常是 `www`) 没有写入权限。
+    *   **解决**:
+        *   在宝塔 **文件** 中，找到 `photo-timeline-backend` 目录。
+        *   点击 **权限**，设置为 `755` 或 `777`，所有者设为 `www`。
+        *   确保目录下生成的 `timeline.db` 文件权限也是可写的 (建议 666 或 777)。
+
+
 3.  **跨域 (CORS)**:
     *   `index.php` 已经内置了 CORS 头，一般不需要额外配置 Nginx 跨域，除非 Nginx 拦截了 OPTIONS 请求。
