@@ -63,6 +63,24 @@ const getApiBaseUrl = () => {
 
 ---
 
+## 第四步：部署管理端 (Admin)
+
+1.  **创建站点**:
+    *   宝塔 **网站 -> 添加站点**。
+    *   域名: `admin.hetao.us`。
+    *   根目录: 指向 `.../photo-timeline-admin/dist/build/h5` (注意是 build/h5 目录)。
+
+2.  **伪静态配置 (Nginx)**:
+    *   **重要**: Uni-app H5 使用 History 模式，必须配置伪静态，否则刷新或直接访问深层链接会报 404。
+    *   请在 **伪静态** 中填入：
+    ```nginx
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+    ```
+
+---
+
 ## 常见问题 (PHP)
 
 1.  **SQLite 驱动缺失**:
