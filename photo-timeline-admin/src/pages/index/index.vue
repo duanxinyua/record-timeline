@@ -348,7 +348,12 @@ const deleteItem = (id) => {
             },
             success: (delRes) => {
                 if (delRes.statusCode === 200) {
-                     items.value = items.value.filter(item => item.id !== id);
+                     if (Array.isArray(items.value)) {
+                        items.value = items.value.filter(item => item.id !== id);
+                     } else {
+                        // Fallback reload if state is inconsistent
+                        load();
+                     }
                      uni.showToast({ title: '删除成功', icon: 'none' });
                 } else if (delRes.statusCode === 403) {
                      uni.showToast({ title: '密钥失效', icon: 'none' });

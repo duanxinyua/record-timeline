@@ -29,7 +29,7 @@ if (preg_match('/\.(?:png|jpg|jpeg|gif)$/', $uri)) {
 }
 
 // Config
-$API_SECRET = "peanut2024";
+$API_SECRET = "peanut2026";
 
 // Helper: Verify API Key
 function verifyKey() {
