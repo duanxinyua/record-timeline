@@ -57,14 +57,21 @@
              <template v-else>
                 <!-- #ifdef H5 -->
                 <view class="h5-triggers">
-                    <view class="trigger-btn" @click="h5ChooseImage">
+                    <view class="trigger-btn" @click="h5CameraPhoto">
                         <text class="trigger-icon">📷</text>
-                        <text>照片</text>
+                        <text>拍照片</text>
                     </view>
-                    <view class="trigger-divider"></view>
-                    <view class="trigger-btn" @click="h5ChooseVideo">
+                    <view class="trigger-btn" @click="h5CameraVideo">
                         <text class="trigger-icon">📹</text>
-                        <text>视频</text>
+                        <text>拍视频</text>
+                    </view>
+                    <view class="trigger-btn" @click="h5AlbumPhoto">
+                        <text class="trigger-icon">🖼️</text>
+                        <text>传照片</text>
+                    </view>
+                    <view class="trigger-btn" @click="h5AlbumVideo">
+                        <text class="trigger-icon">🎞️</text>
+                        <text>传视频</text>
                     </view>
                 </view>
                 <!-- #endif -->
@@ -320,12 +327,12 @@ const handleUpload = (filePath) => {
     });
 };
 
-const h5ChooseImage = () => {
+const h5CameraPhoto = () => {
     // #ifdef H5
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    // Remove capture to allow both camera and album
+    input.setAttribute('capture', 'environment'); // Force back camera
     input.onchange = (event) => {
         const file = event.target.files[0];
         if (file) {
@@ -337,11 +344,46 @@ const h5ChooseImage = () => {
     // #endif
 };
 
-const h5ChooseVideo = () => {
+const h5CameraVideo = () => {
     // #ifdef H5
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'video/*';
+    input.setAttribute('capture', 'environment'); // Force back camera
+    input.onchange = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            const blobUrl = URL.createObjectURL(file);
+            handleUpload(blobUrl);
+        }
+    };
+    input.click();
+    // #endif
+};
+
+const h5AlbumPhoto = () => {
+    // #ifdef H5
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    // No capture -> Camera + Album (or just Album depending on OS)
+    input.onchange = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            const blobUrl = URL.createObjectURL(file);
+            handleUpload(blobUrl);
+        }
+    };
+    input.click();
+    // #endif
+};
+
+const h5AlbumVideo = () => {
+    // #ifdef H5
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'video/*';
+    // No capture
     input.onchange = (event) => {
         const file = event.target.files[0];
         if (file) {
@@ -695,39 +737,32 @@ onMounted(() => {
 }
 
 .h5-triggers {
-    display: flex;
-    align-items: center;
-    justify-content: space-around;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
     width: 100%;
     height: 100%;
 }
 
 .trigger-btn {
-    flex: 1;
-    height: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     color: var(--muted);
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     transition: background 0.2s;
+    border: 1px solid rgba(0,0,0,0.03); /* Subtle grid lines */
 }
 
 .trigger-btn:active {
     background: rgba(0,0,0,0.05);
 }
 
-.trigger-divider {
-    width: 1px;
-    height: 40%;
-    background: var(--line);
-}
-
 .trigger-icon {
-    font-size: 1.8rem;
-    margin-bottom: 8px;
+    font-size: 1.5rem;
+    margin-bottom: 4px;
 }
 
 .upload-placeholder {
