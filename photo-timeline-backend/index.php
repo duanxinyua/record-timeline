@@ -73,7 +73,14 @@ function verifyKey() {
 
     if (!$key || $key !== $API_SECRET) {
         http_response_code(403);
-        echo json_encode(["detail" => "Invalid or missing API Key"]);
+        // DEBUG: Return what we received to debug the issue
+        $debug = [
+            'received_key' => $key,
+            'server_keys' => array_keys($_SERVER),
+            'http_x_api_key' => isset($_SERVER['HTTP_X_API_KEY']) ? $_SERVER['HTTP_X_API_KEY'] : 'NOT_SET',
+            'all_headers' => function_exists('getallheaders') ? getallheaders() : 'N/A'
+        ];
+        echo json_encode(["detail" => "Invalid or missing API Key", "debug" => $debug]);
         exit();
     }
 }
