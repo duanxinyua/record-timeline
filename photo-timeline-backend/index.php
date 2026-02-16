@@ -73,14 +73,7 @@ function verifyKey() {
 
     if (!$key || $key !== $API_SECRET) {
         http_response_code(403);
-        // DEBUG: Return what we received to debug the issue
-        $debug = [
-            'received_key' => $key,
-            'server_keys' => array_keys($_SERVER),
-            'http_x_api_key' => isset($_SERVER['HTTP_X_API_KEY']) ? $_SERVER['HTTP_X_API_KEY'] : 'NOT_SET',
-            'all_headers' => function_exists('getallheaders') ? getallheaders() : 'N/A'
-        ];
-        echo json_encode(["detail" => "Invalid or missing API Key", "debug" => $debug]);
+        echo json_encode(["detail" => "Invalid or missing API Key"]);
         exit();
     }
 }
@@ -113,7 +106,8 @@ function gps2Num($coordPart) {
 
 // GET /
 if ($uri === '/' || $uri === '/index.php') {
-    echo json_encode(["message" => "Peanut Timeline Backend (PHP) is Running!"]);
+    http_response_code(404);
+    echo "404 Not Found";
     exit();
 }
 
@@ -149,7 +143,7 @@ if ($uri === '/upload' && $method === 'POST') {
 
         // Extract EXIF
         $exifData = [];
-        if (in_array(strtolower($ext), ['jpg', 'jpeg'])) {
+        if (in_array(strtolower($ext), ['jpg', 'jpeg']) && function_exists('exif_read_data')) {
             $exif = @exif_read_data($targetPath);
             if ($exif) {
                 if (isset($exif['DateTimeOriginal'])) {

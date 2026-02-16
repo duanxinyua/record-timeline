@@ -84,7 +84,7 @@ const getApiBaseUrl = () => {
 ## 常见问题 (PHP)
 
 1.  **SQLite 驱动缺失**:
-    *   宝塔 **PHP管理 -> 安装扩展**，确保安装了 `sqlite3` 或 `pdo_sqlite`。
+    *   宝塔 **PHP管理 -> 安装扩展**，确保安装了 `sqlite3`、`pdo_sqlite` 和 `exif` (用于提取照片时间/地点)。
     
 2.  **文件上传大小限制**:
     *   宝塔 **PHP管理 -> 配置修改**，调整 `upload_max_filesize` 和 `post_max_size` (建议 10M+)。
