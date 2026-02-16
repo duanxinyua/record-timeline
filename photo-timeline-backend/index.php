@@ -53,12 +53,25 @@ if (preg_match('/\.(?:png|jpg|jpeg|gif)$/', $uri)) {
 $API_SECRET = "peanut2026";
 
 // Helper: Verify API Key
+// Helper: Verify API Key
 function verifyKey() {
     global $API_SECRET;
-    $headers = getallheaders();
-    $key = isset($headers['x-api-key']) ? $headers['x-api-key'] : (isset($headers['X-Api-Key']) ? $headers['X-Api-Key'] : null);
-    
-    if ($key !== $API_SECRET) {
+    $key = null;
+
+    // 1. Try $_SERVER (Standard for Nginx/FastCGI)
+    if (isset($_SERVER['HTTP_X_API_KEY'])) {
+        $key = $_SERVER['HTTP_X_API_KEY'];
+    } 
+    // 2. Try getallheaders
+    elseif (function_exists('getallheaders')) {
+        $headers = getallheaders();
+        $headers = array_change_key_case($headers, CASE_LOWER);
+        if (isset($headers['x-api-key'])) {
+            $key = $headers['x-api-key'];
+        }
+    }
+
+    if (!$key || $key !== $API_SECRET) {
         http_response_code(403);
         echo json_encode(["detail" => "Invalid or missing API Key"]);
         exit();
