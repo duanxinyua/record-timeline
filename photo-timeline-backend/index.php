@@ -122,14 +122,47 @@ if ($uri === '/upload' && $method === 'POST') {
     }
 
     $file = $_FILES['file'];
-    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-    $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'mp4', 'mov', 'webm', 'heic', 'heif', 'avi', '3gp', 'm4v'];
+    // MIME type mapping
+    $mime_map = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/gif' => 'gif',
+        'image/webp' => 'webp',
+        'image/bmp' => 'bmp',
+        'image/tiff' => 'tiff',
+        'image/heic' => 'heic',
+        'image/heif' => 'heif', // Sometimes heif is same as heic
+        'video/mp4' => 'mp4',
+        'video/quicktime' => 'mov',
+        'video/webm' => 'webm',
+        'video/x-msvideo' => 'avi',
+        'video/3gpp' => '3gp',
+        'video/x-m4v' => 'm4v',
+    ];
     
-    if (!in_array(strtolower($ext), $allowed)) {
-         http_response_code(400);
-         // Return the actual received extension to help debugging
-         echo json_encode(["detail" => "File type not allowed: .$ext"]);
-         exit();
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    
+    // If extension is missing or not in whitelist, try MIME detection
+    $allowed_exts = array_unique(array_values($mime_map));
+    if (empty($ext) || !in_array($ext, $allowed_exts)) {
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = finfo_file($finfo, $file['tmp_name']);
+            finfo_close($finfo);
+            
+            if (isset($mime_map[$mime])) {
+                $ext = $mime_map[$mime];
+            } else {
+                 http_response_code(400);
+                 echo json_encode(["detail" => "File type not allowed. MIME: $mime"]);
+                 exit();
+            }
+        } else {
+             // Fallback if finfo is missing
+             http_response_code(400);
+             echo json_encode(["detail" => "File type not allowed: .$ext"]);
+             exit();
+        }
     }
 
     $newFilename = uniqid() . '.' . $ext;
