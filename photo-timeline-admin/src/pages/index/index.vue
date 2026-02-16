@@ -37,15 +37,27 @@
         </view>
         <view class="field">
           <text class="label-text">照片</text>
-          <view class="upload-area" @click="chooseImage">
+          <view class="upload-area" @click="chooseMedia">
              <template v-if="tempPhotoData">
-                <image :src="tempPhotoData.src" mode="aspectFill" class="preview-img"></image>
-                <view class="re-upload-tip">点击更换</view>
+                <video 
+                    v-if="isVideo(tempPhotoData.src)"
+                    :src="tempPhotoData.src" 
+                    class="preview-img"
+                    controls
+                ></video>
+                <image 
+                    v-else
+                    :src="tempPhotoData.src" 
+                    mode="aspectFill" 
+                    class="preview-img" 
+                    @click.stop="previewImage(tempPhotoData.src)"
+                ></image>
+                <view class="re-upload-tip" @click.stop="chooseMedia">点击更换</view>
              </template>
              <template v-else>
                 <view class="upload-placeholder">
-                   <text class="upload-icon">📷</text>
-                   <text>点击选择照片</text>
+                   <text class="upload-icon">📷/📹</text>
+                   <text>点击拍摄或选择</text>
                 </view>
              </template>
           </view>
@@ -97,7 +109,19 @@
               >
                 <view class="dot"></view>
                 <view class="card">
-                  <image class="photo" :src="item.src" mode="aspectFill"></image>
+                  <video 
+                    v-if="isVideo(item.src)"
+                    class="photo" 
+                    :src="item.src" 
+                    controls
+                  ></video>
+                  <image 
+                    v-else
+                    class="photo" 
+                    :src="item.src" 
+                    mode="aspectFill"
+                    @click="previewImage(item.src)"
+                  ></image>
                   <view class="card-body">
                     <text class="date">{{ formatDate(item.date) }}</text>
                     <text class="title">{{ item.title || appConfig.defaultItemTitle }}</text>
@@ -213,6 +237,18 @@ const formatDate = (value) => {
   });
 };
 
+const isVideo = (url) => {
+    if (!url) return false;
+    const ext = url.split('.').pop().toLowerCase();
+    return ['mp4', 'mov', 'webm'].includes(ext);
+};
+
+const previewImage = (url) => {
+    uni.previewImage({
+        urls: [url]
+    });
+};
+
 const isAdmin = computed(() => {
     return !!adminKey.value;
 });
@@ -226,19 +262,21 @@ const bindTimeChange = (e) => {
   timeValue.value = e.detail.value;
 };
 
-const chooseImage = () => {
+const chooseMedia = () => {
   if (!isAdmin.value) return;
 
-  uni.chooseImage({
+  // Use chooseMedia for both image and video
+  uni.chooseMedia({
     count: 1,
-    sizeType: ['original', 'compressed'],
+    mediaType: ['image', 'video'],
     sourceType: ['album', 'camera'],
     success: async (res) => {
-      const tempFilePaths = res.tempFilePaths;
+      const tempFile = res.tempFiles[0];
+      const tempFilePath = tempFile.tempFilePath;
       
       uni.uploadFile({
         url: `${API_BASE}/upload`, 
-        filePath: tempFilePaths[0],
+        filePath: tempFilePath,
         name: 'file',
         header: {
             'x-api-key': adminKey.value
@@ -255,9 +293,13 @@ const chooseImage = () => {
           }
           try {
             const data = JSON.parse(uploadFileRes.data);
+            if (data.error || data.detail) {
+                 uni.showToast({ title: data.detail || data.error, icon: 'none' });
+                 return;
+            }
             tempPhotoData.value = {
                src: data.url,
-               name: data.filename || 'photo.jpg'
+               name: data.filename || 'media'
             };
             uni.showToast({ title: '上传成功', icon: 'success' });
           } catch (e) {
