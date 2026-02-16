@@ -58,6 +58,14 @@
           <text>退出后需重新访问链接登录。</text>
         </view>
       </view>
+
+      <view class="upload-card" v-else>
+          <view class="upload-placeholder" style="padding: 40px 0;">
+              <text style="font-size: 3rem; margin-bottom: 16px;">🔐</text>
+              <text class="label-text" style="text-align: center; margin-bottom: 24px;">这是管理端，需要密钥才能操作</text>
+              <button class="btn primary" @click="requestLogin">输入管理员密钥</button>
+          </view>
+      </view>
     </view>
 
     <view class="timeline-shell">
@@ -399,6 +407,24 @@ const saveSettings = () => {
                 uni.showToast({ title: '无权限', icon: 'none' });
             } else {
                 uni.showToast({ title: '保存失败', icon: 'none' });
+            }
+        }
+    });
+};
+
+const requestLogin = () => {
+    uni.showModal({
+        title: '管理员登录',
+        editable: true,
+        placeholderText: '请输入 API 密钥',
+        success: (res) => {
+            if (res.confirm && res.content) {
+                const key = res.content.trim();
+                if (key) {
+                    uni.setStorageSync('peanut_api_key', key);
+                    adminKey.value = key;
+                    uni.showToast({ title: '登录成功', icon: 'success' });
+                }
             }
         }
     });
