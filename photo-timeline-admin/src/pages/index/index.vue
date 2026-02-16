@@ -262,21 +262,11 @@ const bindTimeChange = (e) => {
   timeValue.value = e.detail.value;
 };
 
-const chooseMedia = () => {
-  if (!isAdmin.value) return;
 
-  // Use chooseMedia for both image and video
-  uni.chooseMedia({
-    count: 1,
-    mediaType: ['image', 'video'],
-    sourceType: ['album', 'camera'],
-    success: async (res) => {
-      const tempFile = res.tempFiles[0];
-      const tempFilePath = tempFile.tempFilePath;
-      
-      uni.uploadFile({
+const handleUpload = (filePath) => {
+    uni.uploadFile({
         url: `${API_BASE}/upload`, 
-        filePath: tempFilePath,
+        filePath: filePath,
         name: 'file',
         header: {
             'x-api-key': adminKey.value
@@ -311,9 +301,47 @@ const chooseMedia = () => {
           console.error(err);
           uni.showToast({ title: '上传失败', icon: 'none' });
         }
-      });
+    });
+};
+
+const chooseMedia = () => {
+  if (!isAdmin.value) return;
+
+  // #ifdef H5
+  uni.showActionSheet({
+      itemList: ['拍摄/选择照片', '拍摄/选择视频'],
+      success: function (res) {
+          if (res.tapIndex === 0) {
+              // Image
+              uni.chooseImage({
+                  count: 1,
+                  sizeType: ['original', 'compressed'],
+                  sourceType: ['album', 'camera'],
+                  success: (res) => handleUpload(res.tempFilePaths[0])
+              });
+          } else {
+              // Video
+              uni.chooseVideo({
+                  sourceType: ['camera', 'album'],
+                  compressed: true,
+                  success: (res) => handleUpload(res.tempFilePath)
+              });
+          }
+      }
+  });
+  // #endif
+
+  // #ifndef H5
+  uni.chooseMedia({
+    count: 1,
+    mediaType: ['image', 'video'],
+    sourceType: ['album', 'camera'],
+    success: async (res) => {
+      const tempFile = res.tempFiles[0];
+      handleUpload(tempFile.tempFilePath);
     }
   });
+  // #endif
 };
 
 const addItems = () => {
