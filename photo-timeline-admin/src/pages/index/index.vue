@@ -618,10 +618,22 @@ const sortedItems = computed(() => {
 
 // Lifecycle
 onLoad((options) => {
+    let key = options && options.key ? options.key : '';
+
+    // #ifdef H5
+    // Support ?key=... before the hash
+    if (!key && window.location.search) {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('key')) {
+            key = params.get('key');
+        }
+    }
+    // #endif
+
     // Magic Link Auth
-    if (options && options.key) {
-        uni.setStorageSync('peanut_api_key', options.key);
-        adminKey.value = options.key;
+    if (key) {
+        uni.setStorageSync('peanut_api_key', key);
+        adminKey.value = key;
         uni.showToast({ title: '管理员模式已激活', icon: 'none' });
     } else {
         // Try load existing key
