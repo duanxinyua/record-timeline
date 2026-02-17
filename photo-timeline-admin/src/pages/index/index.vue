@@ -329,43 +329,147 @@ const bindTimeChange = (e) => {
 
 
 
-const uploadOneFile = (filePath) => {
-    return new Promise((resolve, reject) => {
-        uni.uploadFile({
-            url: `${API_BASE}/upload`, 
-            filePath: filePath,
-            name: 'file',
-            header: {
-                'x-api-key': adminKey.value
-            },
-            formData: {
-              'user': 'test'
-            },
-            success: (uploadFileRes) => {
-              if (uploadFileRes.statusCode === 403) {
-                 uni.showToast({ title: '密钥失效', icon: 'none' });
-                 adminKey.value = ''; 
-                 uni.removeStorageSync('peanut_api_key');
-                 reject('403');
-                 return;
-              }
-              try {
-                const data = JSON.parse(uploadFileRes.data);
-                if (data.error || data.detail) {
-                     reject(data.detail || data.error);
-                     return;
-                }
-                resolve(data);
-              } catch (e) {
-                console.error(e);
-                reject('解析失败');
-              }
-            },
-            fail: (err) => {
-              console.error(err);
-              reject('上传失败');
-            }
-        });
+// Helper to generate thumbnail for H5 video files
+const getVideoThumbnail = (file) => {
+    return new Promise((resolve) => {
+        // #ifdef H5
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(file);
+        video.muted = true;
+        video.playsInline = true;
+        video.currentTime = 0.5; // Capture at 0.5s
+
+        video.onloadeddata = () => {
+             // Delay slightly to ensure render
+             setTimeout(() => {
+                const canvas = document.createElement('canvas');
+                // Limit max dimensions
+                const maxDim = 640;
+                let w = video.videoWidth;
+                let h = video.videoHeight;
+                if (w > h && w > maxDim) { h = (maxDim/w)*h; w = maxDim; }
+                else if (h > w && h > maxDim) { w = (maxDim/h)*w; h = maxDim; }
+                
+                canvas.width = w;
+                canvas.height = h;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, w, h);
+                canvas.toBlob(blob => {
+                    resolve(blob);
+                    // Clean up
+                    URL.revokeObjectURL(video.src);
+                    video.remove();
+                }, 'image/jpeg', 0.7);
+             }, 200);
+        };
+        
+        video.onerror = () => {
+            URL.revokeObjectURL(video.src);
+            resolve(null);
+        };
+        // #endif
+        
+        // #ifndef H5
+        resolve(null);
+        // #endif
+    });
+};
+
+const uploadOneFile = (item) => {
+    return new Promise(async (resolve, reject) => {
+        let filePath, fileObj, thumbPath, thumbFile;
+        
+        // Normalize input
+        if (typeof item === 'string') {
+            filePath = item;
+        } else {
+            filePath = item.path || item.src;
+            fileObj = item.file;
+            thumbPath = item.thumbPath; // For uniapp
+            thumbFile = item.thumbFile; // For H5 blob
+        }
+
+        // 1. Upload the main file
+        let mainFileRes;
+        try {
+            mainFileRes = await new Promise((res, rej) => {
+                const uploadTask = uni.uploadFile({
+                    url: `${API_BASE}/upload`, 
+                    filePath: filePath, // For app/h5 blob url
+                    file: fileObj,      // For h5 file obj (optional if filePath is blob url)
+                    name: 'file',
+                    header: {
+                        'x-api-key': adminKey.value
+                    },
+                    formData: { 'user': 'test' },
+                    success: (uploadFileRes) => {
+                        if (uploadFileRes.statusCode === 403) {
+                            uni.showToast({ title: '密钥失效', icon: 'none' });
+                            adminKey.value = ''; 
+                            uni.removeStorageSync('peanut_api_key');
+                            rej('403');
+                            return;
+                        }
+                        try {
+                            const data = JSON.parse(uploadFileRes.data);
+                            if (data.error || data.detail) {
+                                rej(data.detail || data.error);
+                            } else {
+                                res(data);
+                            }
+                        } catch (e) {
+                            console.error(e);
+                            rej('解析失败');
+                        }
+                    },
+                    fail: (err) => {
+                        console.error("Main upload failed", err);
+                        rej('上传失败');
+                    }
+                });
+            });
+        } catch (error) {
+            reject(error);
+            return;
+        }
+
+        // 2. If there is a thumbnail, upload it
+        let thumbUrl = null;
+        if (thumbPath || thumbFile) {
+             try {
+                const thumbRes = await new Promise((res, rej) => {
+                    uni.uploadFile({
+                        url: `${API_BASE}/upload`, 
+                        filePath: thumbPath, 
+                        file: thumbFile,
+                        name: 'file',
+                        header: { 'x-api-key': adminKey.value },
+                        success: (uploadFileRes) => {
+                            if (uploadFileRes.statusCode === 200) {
+                                 const data = JSON.parse(uploadFileRes.data);
+                                 res(data.url);
+                            } else {
+                                res(null); // Ignore thumb upload failure
+                            }
+                        },
+                        fail: () => res(null)
+                    });
+                });
+                thumbUrl = thumbRes;
+             } catch (e) {
+                 console.warn("Thumbnail upload failed", e);
+             }
+        }
+        
+        // Return combined result
+        // If main file response has a thumb (e.g. valid image), use it. 
+        // If we uploaded a separate thumb (video cover), override/set it.
+        const result = { ...mainFileRes };
+        if (thumbUrl) {
+            result.thumb = thumbUrl;
+        }
+        resolve(result);
     });
 };
 
@@ -410,8 +514,12 @@ const h5CameraPhoto = () => {
     input.onchange = (event) => {
         const files = event.target.files;
         if (files && files.length > 0) {
-            const urls = Array.from(files).map(file => URL.createObjectURL(file));
-            handleBatchUpload(urls);
+            const items = Array.from(files).map(file => ({
+                file: file,
+                path: URL.createObjectURL(file), // Preview URL
+                type: 'image'
+            }));
+            handleBatchUpload(items);
         }
     };
     input.click();
@@ -427,11 +535,23 @@ const h5CameraVideo = () => {
     input.multiple = true;
     input.accept = 'video/*';
     input.setAttribute('capture', 'environment'); // Force back camera
-    input.onchange = (event) => {
+    input.onchange = async (event) => {
         const files = event.target.files;
         if (files && files.length > 0) {
-            const urls = Array.from(files).map(file => URL.createObjectURL(file));
-            handleBatchUpload(urls);
+            uni.showLoading({ title: '处理视频中...' });
+            const items = [];
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const thumbBlob = await getVideoThumbnail(file);
+                items.push({
+                    file: file,
+                    path: URL.createObjectURL(file), // Preview URL
+                    thumbFile: thumbBlob,
+                    type: 'video'
+                });
+            }
+            uni.hideLoading();
+            handleBatchUpload(items);
         }
     };
     input.click();
@@ -450,15 +570,17 @@ const h5AlbumPhoto = () => {
     input.onchange = (event) => {
         const files = event.target.files;
         if (files && files.length > 0) {
-            const urls = Array.from(files).map(file => URL.createObjectURL(file));
-            handleBatchUpload(urls);
+             const items = Array.from(files).map(file => ({
+                file: file,
+                path: URL.createObjectURL(file),
+                type: 'image'
+            }));
+            handleBatchUpload(items);
         }
     };
     input.click();
     // #endif
 };
-
-
 
 const h5AlbumVideo = () => {
     // #ifdef H5
@@ -467,16 +589,32 @@ const h5AlbumVideo = () => {
     input.multiple = true;
     input.accept = 'video/*';
     // No capture
-    input.onchange = (event) => {
+    input.onchange = async (event) => {
         const files = event.target.files;
         if (files && files.length > 0) {
-            const urls = Array.from(files).map(file => URL.createObjectURL(file));
-            handleBatchUpload(urls);
+            uni.showLoading({ title: '处理视频中...' });
+            const items = [];
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const thumbBlob = await getVideoThumbnail(file);
+                items.push({
+                    file: file,
+                    path: URL.createObjectURL(file), // Preview URL
+                    thumbFile: thumbBlob,
+                    type: 'video'
+                });
+            }
+            uni.hideLoading();
+            handleBatchUpload(items);
         }
     };
     input.click();
     // #endif
 };
+
+
+
+
 
 
 
