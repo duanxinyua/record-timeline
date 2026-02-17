@@ -70,6 +70,11 @@ function verifyKey() {
             $key = $headers['x-api-key'];
         }
     }
+    
+    // 3. Try $_GET (for browser access or simplified calls)
+    if (!$key && isset($_GET['key'])) {
+        $key = $_GET['key'];
+    }
 
     if (!$key || $key !== $API_SECRET) {
         http_response_code(403);
