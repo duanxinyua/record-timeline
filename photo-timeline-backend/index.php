@@ -102,6 +102,60 @@ function gps2Num($coordPart) {
     return floatval($parts[0]) / floatval($parts[1]);
 }
 
+// Helper: Create Thumbnail
+function createThumbnail($src, $dest, $maxWidth=800) {
+    // Get image dimensions 
+    $size = @getimagesize($src);
+    if ($size === false) return false;
+    
+    list($width, $height, $type) = $size;
+    
+    // Calculate new dimensions
+    $ratio = $width / $height;
+    if ($width > $maxWidth) {
+        $newWidth = $maxWidth;
+        $newHeight = $maxWidth / $ratio;
+    } else {
+        $newWidth = $width;
+        $newHeight = $height;
+    }
+    
+    // Create source image resource
+    $source = null;
+    switch ($type) {
+        case IMAGETYPE_JPEG: $source = @imagecreatefromjpeg($src); break;
+        case IMAGETYPE_PNG:  $source = @imagecreatefrompng($src); break;
+        case IMAGETYPE_GIF:  $source = @imagecreatefromgif($src); break;
+        case IMAGETYPE_WEBP: 
+            if (function_exists('imagecreatefromwebp')) {
+                $source = @imagecreatefromwebp($src); 
+            }
+            break;
+        case IMAGETYPE_BMP:  
+            if (function_exists('imagecreatefrombmp')) {
+                $source = @imagecreatefrombmp($src); 
+            }
+            break;
+    }
+    
+    if (!$source) return false;
+    
+    // Create destination image
+    $thumb = imagecreatetruecolor($newWidth, $newHeight);
+    
+    // Resize with resampling
+    imagecopyresampled($thumb, $source, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
+    
+    // Save as JPEG (quality 60)
+    imagejpeg($thumb, $dest, 60);
+    
+    // Clean up
+    imagedestroy($source);
+    imagedestroy($thumb);
+    
+    return true;
+}
+
 // --- Routes ---
 
 // GET /
@@ -192,9 +246,21 @@ if ($uri === '/upload' && $method === 'POST') {
                 }
             }
         }
+
+        // Generate Thumbnail
+        $thumbUrl = null;
+        // Only generate for image types
+        if (in_array(strtolower($ext), ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'])) {
+             $thumbFilename = uniqid() . '_thumb.jpg';
+             $thumbPath = __DIR__ . '/uploads/' . $thumbFilename;
+             if (createThumbnail($targetPath, $thumbPath)) {
+                 $thumbUrl = $protocol . $host . '/uploads/' . $thumbFilename;
+             }
+        }
         
         echo json_encode([
             "url" => $url,
+            "thumb" => $thumbUrl,
             "filename" => $file['name'],
             "exif" => $exifData
         ]);
@@ -223,11 +289,12 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'POST') {
         exit();
     }
 
-    $stmt = $pdo->prepare("INSERT INTO timelineitem (title, date, src, latitude, longitude, taken_at) VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt = $pdo->prepare("INSERT INTO timelineitem (title, date, src, thumb, latitude, longitude, taken_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([
         $data['title'] ?? '',
         $data['date'],
         $data['src'],
+        $data['thumb'] ?? null,
         $data['latitude'] ?? null,
         $data['longitude'] ?? null,
         $data['taken_at'] ?? null

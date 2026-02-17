@@ -59,6 +59,19 @@ try {
         $pdo->exec("ALTER TABLE appconfig ADD COLUMN appTitle TEXT DEFAULT '花生'");
     }
 
+    // Migration: Check if thumb exists in timelineitem
+    $itemCols = $pdo->query("PRAGMA table_info(timelineitem)")->fetchAll();
+    $hasThumb = false;
+    foreach ($itemCols as $col) {
+        if ($col['name'] === 'thumb') {
+            $hasThumb = true;
+            break;
+        }
+    }
+    if (!$hasThumb) {
+        $pdo->exec("ALTER TABLE timelineitem ADD COLUMN thumb TEXT");
+    }
+
     // Seed Config if empty
     $stmt = $pdo->query("SELECT COUNT(*) FROM appconfig");
     if ($stmt->fetchColumn() == 0) {

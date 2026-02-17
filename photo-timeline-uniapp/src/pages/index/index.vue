@@ -37,7 +37,12 @@
               >
                 <view class="dot"></view>
                 <view class="card">
-                  <image class="photo" :src="item.src" mode="aspectFill"></image>
+                  <image 
+                    class="photo" 
+                    :src="item.thumb || item.src" 
+                    mode="aspectFill"
+                    @click="previewImage(item.src)"
+                  ></image>
                   <view class="card-body">
                     <text class="date">{{ formatDate(item.date) }}</text>
                     <text class="title">{{ item.title || appConfig.defaultItemTitle }}</text>
@@ -71,6 +76,12 @@ const getApiBaseUrl = () => {
 const API_BASE = getApiBaseUrl();
 
 // Helpers
+const previewImage = (url) => {
+    uni.previewImage({
+        urls: [url]
+    });
+};
+
 const formatDate = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return appConfig.unknownDateText;
