@@ -100,10 +100,27 @@ function gpsToDecimal($coord, $hemi) {
     return null;
 }
 
-function gps2Num($coordPart) {
-    $parts = explode('/', $coordPart);
+// Helper: Convert GPS DMS to Decimal
+function gpsToDecimal($coords, $ref) {
+    if (!is_array($coords) || count($coords) < 3) return null;
+
+    $d = evalMath($coords[0]);
+    $m = evalMath($coords[1]);
+    $s = evalMath($coords[2]);
+
+    $decimal = $d + ($m / 60) + ($s / 3600);
+
+    if (strtoupper($ref) === 'S' || strtoupper($ref) === 'W') {
+        $decimal *= -1;
+    }
+
+    return $decimal;
+}
+
+function evalMath($str) {
+    $parts = explode('/', $str);
     if (count($parts) <= 0) return 0;
-    if (count($parts) == 1) return $parts[0];
+    if (count($parts) == 1) return floatval($parts[0]);
     return floatval($parts[0]) / floatval($parts[1]);
 }
 
