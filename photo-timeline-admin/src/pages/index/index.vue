@@ -116,6 +116,7 @@
         class="timeline" 
         scroll-y="true" 
         scroll-with-animation="true"
+        @scrolltolower="onReachBottom"
       >
         <view class="timeline-content">
             <view class="axis" aria-hidden="true"></view>
@@ -133,11 +134,15 @@
                 <view class="dot"></view>
                 <view class="card">
                   <video 
-                    v-if="isVideo(item.src)"
+                    v-if="isVideo(item.src) && !showSettingsModal"
                     class="photo" 
                     :src="item.src" 
                     controls
                   ></video>
+                   <!-- Placeholder when video is hidden (optional, but good for layout stability) -->
+                   <view v-if="isVideo(item.src) && showSettingsModal" class="photo" style="background: #000; display: flex; align-items: center; justify-content: center;">
+                       <text style="color: #fff;">📹</text>
+                   </view>
                   <image 
                     v-else
                     class="photo" 
@@ -154,6 +159,11 @@
                   </view>
                 </view>
               </view>
+            </view>
+            
+            <!-- Loading More Indicator -->
+            <view class="loading-more" v-if="items.length > 0">
+                <text class="loading-text">{{ isLoading ? '加载中...' : (hasMore ? '上拉加载更多' : '已经是最后一条数据了') }}</text>
             </view>
         </view>
       </scroll-view>
@@ -199,6 +209,10 @@
                     <text class="label-text">未知时间提示</text>
                     <input class="uni-input" v-model="editConfig.unknownDateText" />
                 </view>
+                <view class="field">
+                    <text class="label-text">每页加载数量</text>
+                    <input class="uni-input" type="number" v-model.number="editConfig.pageSize" />
+                </view>
             </view>
             <view class="modal-footer">
                 <button class="btn primary" @click="saveSettings">保存配置</button>
@@ -210,7 +224,8 @@
 
 <script setup>
 import { ref, computed, onMounted, reactive } from 'vue';
-import { onLoad } from '@dcloudio/uni-app';
+
+import { onLoad, onReachBottom } from '@dcloudio/uni-app';
 
 const STORAGE_KEY = 'photoTimelineItems';
 
@@ -223,7 +238,8 @@ const appConfig = reactive({
     timelineTitle: "时间轴",
     emptyText: "还没有照片，先上传几张吧。",
     defaultItemTitle: "未命名照片",
-    unknownDateText: "未知时间"
+    unknownDateText: "未知时间",
+    pageSize: 5
 });
 
 const editConfig = reactive({...appConfig});
@@ -234,8 +250,17 @@ const dateValue = ref('');
 const timeValue = ref('');
 const captionValue = ref('');
 const items = ref([]);
+
 const tempPhotoData = ref(null); 
+const batchList = ref([]); // Store batch uploaded items
 const adminKey = ref(''); // Store the API Key
+
+
+// Pagination State
+// Pagination State
+const page = ref(1);
+const hasMore = ref(true);
+const isLoading = ref(false);
 
 // Dynamic API Base URL
 const getApiBaseUrl = () => {
@@ -274,6 +299,7 @@ const previewImage = (url) => {
 
 const clearSelection = () => {
     tempPhotoData.value = null;
+    batchList.value = [];
 };
 
 const isAdmin = computed(() => {
@@ -290,133 +316,176 @@ const bindTimeChange = (e) => {
 };
 
 
-const handleUpload = (filePath) => {
-    uni.uploadFile({
-        url: `${API_BASE}/upload`, 
-        filePath: filePath,
-        name: 'file',
-        header: {
-            'x-api-key': adminKey.value
-        },
-        formData: {
-          'user': 'test'
-        },
-        success: (uploadFileRes) => {
-          if (uploadFileRes.statusCode === 403) {
-             uni.showToast({ title: '密钥失效', icon: 'none' });
-             adminKey.value = ''; 
-             uni.removeStorageSync('peanut_api_key');
-             return;
-          }
-          try {
-            const data = JSON.parse(uploadFileRes.data);
-            if (data.error || data.detail) {
-                 uni.showToast({ title: data.detail || data.error, icon: 'none' });
+
+const uploadOneFile = (filePath) => {
+    return new Promise((resolve, reject) => {
+        uni.uploadFile({
+            url: `${API_BASE}/upload`, 
+            filePath: filePath,
+            name: 'file',
+            header: {
+                'x-api-key': adminKey.value
+            },
+            formData: {
+              'user': 'test'
+            },
+            success: (uploadFileRes) => {
+              if (uploadFileRes.statusCode === 403) {
+                 uni.showToast({ title: '密钥失效', icon: 'none' });
+                 adminKey.value = ''; 
+                 uni.removeStorageSync('peanut_api_key');
+                 reject('403');
                  return;
+              }
+              try {
+                const data = JSON.parse(uploadFileRes.data);
+                if (data.error || data.detail) {
+                     reject(data.detail || data.error);
+                     return;
+                }
+                resolve(data);
+              } catch (e) {
+                console.error(e);
+                reject('解析失败');
+              }
+            },
+            fail: (err) => {
+              console.error(err);
+              reject('上传失败');
             }
-            tempPhotoData.value = {
-               src: data.url,
-               thumb: data.thumb,
-               name: data.filename || 'media'
-            };
-            uni.showToast({ title: '上传成功', icon: 'success' });
-          } catch (e) {
-            console.error(e);
-            uni.showToast({ title: '解析失败', icon: 'none' });
-          }
-        },
-        fail: (err) => {
-          console.error(err);
-          uni.showToast({ title: '上传失败', icon: 'none' });
-        }
+        });
     });
 };
+
+const handleBatchUpload = async (filePaths) => {
+    if (!filePaths || filePaths.length === 0) return;
+    
+    uni.showLoading({ title: `正在上传 0/${filePaths.length}` });
+    batchList.value = [];
+    
+    try {
+        for (let i = 0; i < filePaths.length; i++) {
+            uni.showLoading({ title: `正在上传 ${i+1}/${filePaths.length}` });
+            const data = await uploadOneFile(filePaths[i]);
+            batchList.value.push({
+                src: data.url,
+                thumb: data.thumb,
+                name: data.filename || 'media',
+                exif: data.exif
+            });
+        }
+        
+        if (batchList.value.length > 0) {
+            tempPhotoData.value = batchList.value[0];
+            uni.showToast({ title: '上传完成', icon: 'success' });
+        }
+    } catch (e) {
+        uni.showToast({ title: e || '上传出错', icon: 'none' });
+    } finally {
+        uni.hideLoading();
+    }
+};
+
+
 
 const h5CameraPhoto = () => {
     // #ifdef H5
     const input = document.createElement('input');
     input.type = 'file';
+    input.multiple = true;
     input.accept = 'image/*';
     input.setAttribute('capture', 'environment'); // Force back camera
     input.onchange = (event) => {
-        const file = event.target.files[0];
-        if (file) {
-            const blobUrl = URL.createObjectURL(file);
-            handleUpload(blobUrl);
+        const files = event.target.files;
+        if (files && files.length > 0) {
+            const urls = Array.from(files).map(file => URL.createObjectURL(file));
+            handleBatchUpload(urls);
         }
     };
     input.click();
     // #endif
 };
+
+
 
 const h5CameraVideo = () => {
     // #ifdef H5
     const input = document.createElement('input');
     input.type = 'file';
+    input.multiple = true;
     input.accept = 'video/*';
     input.setAttribute('capture', 'environment'); // Force back camera
     input.onchange = (event) => {
-        const file = event.target.files[0];
-        if (file) {
-            const blobUrl = URL.createObjectURL(file);
-            handleUpload(blobUrl);
+        const files = event.target.files;
+        if (files && files.length > 0) {
+            const urls = Array.from(files).map(file => URL.createObjectURL(file));
+            handleBatchUpload(urls);
         }
     };
     input.click();
     // #endif
 };
+
+
 
 const h5AlbumPhoto = () => {
     // #ifdef H5
     const input = document.createElement('input');
     input.type = 'file';
+    input.multiple = true;
     input.accept = 'image/*';
     // No capture -> Camera + Album (or just Album depending on OS)
     input.onchange = (event) => {
-        const file = event.target.files[0];
-        if (file) {
-            const blobUrl = URL.createObjectURL(file);
-            handleUpload(blobUrl);
+        const files = event.target.files;
+        if (files && files.length > 0) {
+            const urls = Array.from(files).map(file => URL.createObjectURL(file));
+            handleBatchUpload(urls);
         }
     };
     input.click();
     // #endif
 };
 
+
+
 const h5AlbumVideo = () => {
     // #ifdef H5
     const input = document.createElement('input');
     input.type = 'file';
+    input.multiple = true;
     input.accept = 'video/*';
     // No capture
     input.onchange = (event) => {
-        const file = event.target.files[0];
-        if (file) {
-            const blobUrl = URL.createObjectURL(file);
-            handleUpload(blobUrl);
+        const files = event.target.files;
+        if (files && files.length > 0) {
+            const urls = Array.from(files).map(file => URL.createObjectURL(file));
+            handleBatchUpload(urls);
         }
     };
     input.click();
     // #endif
 };
+
+
 
 const chooseMedia = () => {
   if (!isAdmin.value) return;
 
   // #ifndef H5
   uni.chooseMedia({
-    count: 1,
+    count: 9,
     mediaType: ['image', 'video'],
     sourceType: ['album', 'camera'],
     success: async (res) => {
-      const tempFile = res.tempFiles[0];
-      handleUpload(tempFile.tempFilePath);
+      const urls = res.tempFiles.map(f => f.tempFilePath);
+      handleBatchUpload(urls);
     }
   });
   // #endif
 };
 
-const addItems = () => {
+
+const addItems = async () => {
   if (!tempPhotoData.value) {
     uni.showToast({ title: '请先选择照片', icon: 'none' });
     return;
@@ -437,42 +506,72 @@ const addItems = () => {
       finalDateStr = new Date().toISOString();
   }
   
-  const date = new Date(finalDateStr);
+  const baseDate = new Date(finalDateStr);
+  const itemsToSave = batchList.value.length > 0 ? batchList.value : [tempPhotoData.value];
   
-  const newItem = {
-    // id will be generated by backend
-    date: date.toISOString(),
-    title: captionValue.value || tempPhotoData.value.name.replace(/\.[^/.]+$/, ""),
-    src: tempPhotoData.value.src,
-    thumb: tempPhotoData.value.thumb
-  };
+  uni.showLoading({ title: '正在发布...' });
 
-  uni.request({
-    url: `${API_BASE}/items/`,
-    method: 'POST',
-    header: {
-        'x-api-key': adminKey.value
-    },
-    data: newItem,
-    success: (res) => {
-        if (res.statusCode === 200) {
-            items.value.push(res.data);
-            uni.showToast({ title: '添加成功', icon: 'success' });
-             // Reset form
-            captionValue.value = '';
-            tempPhotoData.value = null;
-        } else if (res.statusCode === 403) {
-             uni.showToast({ title: '密钥失效', icon: 'none' });
-             adminKey.value = '';
-             uni.removeStorageSync('peanut_api_key');
-        } else {
-            uni.showToast({ title: '保存失败', icon: 'none' });
-        }
-    },
-    fail: () => {
-         uni.showToast({ title: '请求失败', icon: 'none' });
-    }
-  });
+  try {
+      for (let i = 0; i < itemsToSave.length; i++) {
+          const item = itemsToSave[i];
+          // Use EXIF date if available and not overridden by user manually
+          // Actually user usually sets one date for the batch?
+          // Let's use the baseDate, but maybe increment seconds to ensure order?
+          // Or if item has EXIF data, prefer that? 
+          // Implementation: Priority Exif > Selected Date.
+          // User asked: "first one has title, others empty".
+          
+          let itemDate = baseDate;
+          if (item.exif && item.exif.date) {
+               // Parse EXIF date "YYYY:MM:DD HH:MM:SS"
+               const parts = item.exif.date.split(/[: ]/);
+               if (parts.length >= 6) {
+                   itemDate = new Date(parts[0], parts[1]-1, parts[2], parts[3], parts[4], parts[5]);
+               }
+          }
+          // Fallback: add i seconds to ensure uniqueness/ordering if identical
+          if (!item.exif) {
+              itemDate = new Date(baseDate.getTime() + i * 1000);
+          }
+
+          const newItem = {
+            date: itemDate.toISOString(),
+            title: (i === 0) ? (captionValue.value || item.name.replace(/\.[^/.]+$/, "")) : '',
+            src: item.src,
+            thumb: item.thumb,
+            latitude: item.exif ? item.exif.latitude : null,
+            longitude: item.exif ? item.exif.longitude : null
+          };
+
+          await new Promise((resolve, reject) => {
+              uni.request({
+                url: `${API_BASE}/items/`,
+                method: 'POST',
+                header: { 'x-api-key': adminKey.value },
+                data: newItem,
+                success: (res) => {
+                    if (res.statusCode === 200) {
+                        items.value.unshift(res.data); // Add to top
+                        resolve(res.data);
+                    } else {
+                        reject('Failed');
+                    }
+                },
+                fail: reject
+            });
+          });
+      }
+      
+      uni.showToast({ title: '全部发布成功', icon: 'success' });
+      // Reset
+      captionValue.value = '';
+      tempPhotoData.value = null;
+      batchList.value = [];
+  } catch (e) {
+      uni.showToast({ title: '发布过程中出错', icon: 'none' });
+  } finally {
+      uni.hideLoading();
+  }
 };
 
 const deleteItem = (id) => {
@@ -518,6 +617,9 @@ const fetchConfig = () => {
         success: (res) => {
             if (res.statusCode === 200) {
                 Object.assign(appConfig, res.data);
+                if (appConfig.pageSize) {
+                    appConfig.pageSize = Number(appConfig.pageSize);
+                }
                 uni.setNavigationBarTitle({
                     title: appConfig.appTitle
                 });
@@ -595,21 +697,51 @@ const logout = () => {
 
 // Removed save() as it is now handled by API calls
 
-const load = () => {
+const load = (isRefresh = true) => {
+  if (isLoading.value) return;
+  
+  if (isRefresh) {
+      page.value = 1;
+      hasMore.value = true;
+      items.value = [];
+  }
+  
+  if (!hasMore.value) return;
+
+  isLoading.value = true;
+  const limit = appConfig.pageSize && Number(appConfig.pageSize) > 0 ? Number(appConfig.pageSize) : 5;
+
   uni.request({
-      url: `${API_BASE}/items/`,
+      url: `${API_BASE}/items/?page=${page.value}&limit=${limit}`,
       method: 'GET',
       success: (res) => {
           if (res.statusCode === 200) {
-              items.value = res.data;
+              const newItems = res.data;
+              if (newItems.length < limit) {
+                  hasMore.value = false;
+              }
+              items.value = [...items.value, ...newItems];
+              page.value++;
           }
       },
       fail: (e) => {
           console.error(e);
           uni.showToast({ title: '加载失败', icon: 'none' });
+      },
+      complete: () => {
+          isLoading.value = false;
+          if (isRefresh) {
+              uni.stopPullDownRefresh();
+          }
       }
   });
 };
+
+onReachBottom(() => {
+    if (hasMore.value) {
+        load(false);
+    }
+});
 
 // Computed
 const sortedItems = computed(() => {
