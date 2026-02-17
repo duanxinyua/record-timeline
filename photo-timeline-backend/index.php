@@ -88,17 +88,7 @@ function getJsonBody() {
     return json_decode(file_get_contents('php://input'), true);
 }
 
-// Helper: Convert GPS coordinates to decimal
-function gpsToDecimal($coord, $hemi) {
-    if (!empty($coord)) {
-        $degrees = count($coord) > 0 ? gps2Num($coord[0]) : 0;
-        $minutes = count($coord) > 1 ? gps2Num($coord[1]) : 0;
-        $seconds = count($coord) > 2 ? gps2Num($coord[2]) : 0;
-        $flip = ($hemi == 'W' || $hemi == 'S') ? -1 : 1;
-        return $flip * ($degrees + ($minutes / 60) + ($seconds / 3600));
-    }
-    return null;
-}
+
 
 // Helper: Convert GPS DMS to Decimal
 function gpsToDecimal($coords, $ref) {
@@ -117,12 +107,17 @@ function gpsToDecimal($coords, $ref) {
     return $decimal;
 }
 
+
 function evalMath($str) {
+    if (!is_string($str)) return 0;
     $parts = explode('/', $str);
     if (count($parts) <= 0) return 0;
     if (count($parts) == 1) return floatval($parts[0]);
-    return floatval($parts[0]) / floatval($parts[1]);
+    $denominator = floatval($parts[1]);
+    if ($denominator == 0) return 0; // Avoid division by zero
+    return floatval($parts[0]) / $denominator;
 }
+
 
 // Helper: Create Thumbnail
 function createThumbnail($src, $dest, $maxWidth=800) {
