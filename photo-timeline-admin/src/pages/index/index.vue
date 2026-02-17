@@ -61,7 +61,9 @@
                 </scroll-view>
                 <view class="re-upload-tip" @click.stop="clearSelection">✕ 清除 {{ batchList.length }} 项</view>
              </template>
-             <template v-else>
+             
+             <!-- Upload Triggers (Always Visible) -->
+             <view class="upload-controls" :style="{ marginTop: batchList.length > 0 ? '16px' : '0' }">
                 <!-- #ifdef H5 -->
                 <view class="h5-triggers">
                     <view class="trigger-btn" @click="h5CameraPhoto">
@@ -84,12 +86,12 @@
                 <!-- #endif -->
                 
                 <!-- #ifndef H5 -->
-                <view class="upload-placeholder" @click="chooseMedia">
+                <view class="upload-placeholder" @click="chooseMedia" :class="{ 'compact': batchList.length > 0 }">
                    <text class="upload-icon">📷/📹</text>
-                   <text>点击拍摄或选择</text>
+                   <text>{{ batchList.length > 0 ? '继续添加' : '点击拍摄或选择' }}</text>
                 </view>
                 <!-- #endif -->
-             </template>
+             </view>
           </view>
         </view>
         <view class="actions">
@@ -1308,5 +1310,11 @@ onMounted(() => {
   height: 100%;
   object-fit: cover;
 }
+
+.upload-placeholder.compact {
+    padding: 20px 0;
+    min-height: 80px;
+}
+
 
 </style>
