@@ -278,8 +278,20 @@ if ($uri === '/upload' && $method === 'POST') {
 
 // GET /items/
 if (($uri === '/items/' || $uri === '/items') && $method === 'GET') {
-    $stmt = $pdo->query("SELECT * FROM timelineitem ORDER BY date ASC");
-    echo json_encode($stmt->fetchAll());
+    $page = isset($_GET['page']) ? (int)$_GET['page'] : 0;
+    $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 0;
+
+    if ($page > 0 && $limit > 0) {
+        $offset = ($page - 1) * $limit;
+        $stmt = $pdo->prepare("SELECT * FROM timelineitem ORDER BY date DESC LIMIT :limit OFFSET :offset");
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        echo json_encode($stmt->fetchAll());
+    } else {
+        $stmt = $pdo->query("SELECT * FROM timelineitem ORDER BY date ASC");
+        echo json_encode($stmt->fetchAll());
+    }
     exit();
 }
 
@@ -350,7 +362,7 @@ if (($uri === '/config' || $uri === '/config/') && $method === 'POST') {
     // We update row 1
     $sql = "UPDATE appconfig SET ";
     $params = [];
-    $fields = ['appTitle', 'kicker', 'mainTitle', 'subTitle', 'timelineTitle', 'emptyText', 'defaultItemTitle', 'unknownDateText'];
+    $fields = ['appTitle', 'kicker', 'mainTitle', 'subTitle', 'timelineTitle', 'emptyText', 'defaultItemTitle', 'unknownDateText', 'pageSize'];
     
     foreach ($fields as $field) {
         if (isset($data[$field])) {
