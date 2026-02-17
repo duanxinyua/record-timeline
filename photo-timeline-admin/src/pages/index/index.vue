@@ -38,21 +38,28 @@
         <view class="field">
           <text class="label-text">照片</text>
           <view class="upload-area">
-             <template v-if="tempPhotoData">
-                <video 
-                    v-if="isVideo(tempPhotoData.src)"
-                    :src="tempPhotoData.src" 
-                    class="preview-img"
-                    controls
-                ></video>
-                <image 
-                    v-else
-                    :src="tempPhotoData.src" 
-                    mode="aspectFill" 
-                    class="preview-img" 
-                    @click.stop="previewImage(tempPhotoData.src)"
-                ></image>
-                <view class="re-upload-tip" @click.stop="clearSelection">✕ 清除选择</view>
+             <template v-if="batchList.length > 0">
+                <scroll-view scroll-x="true" class="preview-scroll">
+                    <view class="preview-list">
+                        <view class="preview-item" v-for="(item, index) in batchList" :key="index">
+                             <video 
+                                v-if="isVideo(item.src)"
+                                :src="item.src" 
+                                class="preview-media"
+                                :controls="false"
+                                :show-center-play-btn="false" 
+                            ></video>
+                            <image 
+                                v-else
+                                :src="item.thumb || item.src" 
+                                mode="aspectFill" 
+                                class="preview-media" 
+                                @click.stop="previewImage(item.src)"
+                            ></image>
+                        </view>
+                    </view>
+                </scroll-view>
+                <view class="re-upload-tip" @click.stop="clearSelection">✕ 清除 {{ batchList.length }} 项</view>
              </template>
              <template v-else>
                 <!-- #ifdef H5 -->
@@ -137,6 +144,7 @@
                     v-if="isVideo(item.src) && !showSettingsModal"
                     class="photo" 
                     :src="item.src" 
+                    :poster="item.thumb"
                     controls
                   ></video>
                    <!-- Placeholder when video is hidden (optional, but good for layout stability) -->
@@ -287,8 +295,10 @@ const formatDate = (value) => {
 
 const isVideo = (url) => {
     if (!url) return false;
-    const ext = url.split('.').pop().toLowerCase();
-    return ['mp4', 'mov', 'webm'].includes(ext);
+    // Remove query params and lowercase
+    const cleanUrl = url.split('?')[0];
+    const ext = cleanUrl.split('.').pop().toLowerCase();
+    return ['mp4', 'mov', 'webm', 'avi', 'm4v', 'kv'].includes(ext);
 };
 
 const previewImage = (url) => {
@@ -1265,6 +1275,38 @@ onMounted(() => {
     padding: 20px 24px;
     border-top: 1px solid var(--line);
     text-align: right;
+}
+
+
+.preview-scroll {
+  width: 100%;
+  height: 100%;
+  white-space: nowrap;
+}
+
+.preview-list {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  padding: 0 10px;
+  gap: 10px;
+}
+
+.preview-item {
+  display: inline-block;
+  width: 120px;
+  height: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+}
+
+.preview-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 </style>
