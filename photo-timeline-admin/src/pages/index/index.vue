@@ -527,6 +527,7 @@ const fetchConfig = () => {
 };
 
 const openSettings = () => {
+    /* console.log('Opening settings...'); */
     Object.assign(editConfig, appConfig);
     showSettingsModal.value = true;
 };
@@ -1059,5 +1060,67 @@ onMounted(() => {
 }
 
 
+
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    background: #fff;
+    width: 90%;
+    max-width: 480px;
+    border-radius: 24px;
+    overflow: hidden;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+    display: flex;
+    flex-direction: column;
+    max-height: 80vh;
+}
+
+.modal-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-title {
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.close-btn {
+    font-size: 1.5rem;
+    padding: 8px;
+    cursor: pointer;
+    line-height: 1;
+    color: var(--muted);
+}
+
+.modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.modal-footer {
+    padding: 20px 24px;
+    border-top: 1px solid var(--line);
+    text-align: right;
+}
 
 </style>
