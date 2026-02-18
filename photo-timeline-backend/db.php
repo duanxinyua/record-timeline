@@ -42,21 +42,28 @@ try {
             timelineTitle TEXT DEFAULT '时间轴',
             emptyText TEXT DEFAULT '还没有照片，先上传几张吧。',
             defaultItemTitle TEXT DEFAULT '未命名照片',
-            unknownDateText TEXT DEFAULT '未知时间'
+            unknownDateText TEXT DEFAULT '未知时间',
+            pageSize INTEGER DEFAULT 5
         )
     ");
 
     // Migration: Check if appTitle exists (for existing dbs)
     $cols = $pdo->query("PRAGMA table_info(appconfig)")->fetchAll();
     $hasAppTitle = false;
+    $hasPageSize = false;
     foreach ($cols as $col) {
         if ($col['name'] === 'appTitle') {
             $hasAppTitle = true;
-            break;
+        }
+        if ($col['name'] === 'pageSize') {
+            $hasPageSize = true;
         }
     }
     if (!$hasAppTitle) {
         $pdo->exec("ALTER TABLE appconfig ADD COLUMN appTitle TEXT DEFAULT '花生'");
+    }
+    if (!$hasPageSize) {
+        $pdo->exec("ALTER TABLE appconfig ADD COLUMN pageSize INTEGER DEFAULT 5");
     }
 
     // Migration: Check if thumb exists in timelineitem
