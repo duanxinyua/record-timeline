@@ -146,7 +146,6 @@
                     v-if="isVideo(item.src) && !showSettingsModal"
                     class="photo" 
                     :src="item.src" 
-                    :poster="item.thumb"
                     controls
                   ></video>
                    <!-- Placeholder when video is hidden (optional, but good for layout stability) -->
@@ -163,9 +162,11 @@
                   <view class="card-body">
                     <text class="date">{{ formatDate(item.date) }}</text>
                     <text class="title">{{ item.title || appConfig.defaultItemTitle }}</text>
-                    <view class="delete-btn" @click="deleteItem(item.id)" v-if="isAdmin">
-                      <text class="delete-text">删除</text>
-                    </view>
+                    <text class="title">{{ item.title || appConfig.defaultItemTitle }}</text>
+                  </view>
+                  
+                  <view class="delete-btn-overlay" @click.stop="deleteItem(item.id)" v-if="isAdmin">
+                      <text class="delete-icon">🗑️</text>
                   </view>
                 </view>
               </view>
@@ -1153,14 +1154,34 @@ onMounted(() => {
 }
 
 .card {
-  position: relative; /* For absolute delete btn */
-  background: #fff;
-  border-radius: 24px;
+  position: relative;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 10px 20px rgba(93, 64, 55, 0.05);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s;
   border: 1px solid rgba(255, 255, 255, 0.6);
-  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
   width: 100%;
+}
+
+.delete-btn-overlay {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    cursor: pointer;
+}
+
+.delete-icon {
+    font-size: 18px;
+    color: #fff;
 }
 
 .card:active {
