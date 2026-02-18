@@ -542,11 +542,10 @@ const h5CameraVideo = () => {
             const items = [];
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
-                const thumbBlob = await getVideoThumbnail(file);
+                // Remove thumbnail generation as per user request
                 items.push({
                     file: file,
                     path: URL.createObjectURL(file), // Preview URL
-                    thumbFile: thumbBlob,
                     type: 'video'
                 });
             }
@@ -596,12 +595,11 @@ const h5AlbumVideo = () => {
             const items = [];
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
-                const thumbBlob = await getVideoThumbnail(file);
+                // Remove thumbnail generation as per user request
                 items.push({
                     file: file,
                     path: URL.createObjectURL(file), // Preview URL
-                    thumbFile: thumbBlob,
-                    type: 'video'
+                   type: 'video'
                 });
             }
             uni.hideLoading();
