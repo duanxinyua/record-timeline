@@ -66,19 +66,19 @@
              <view class="upload-controls" :style="{ marginTop: batchList.length > 0 ? '16px' : '0' }">
                 <!-- #ifdef H5 -->
                 <view class="h5-triggers">
-                    <view class="trigger-btn" @click="h5CameraPhoto">
+                    <view class="trigger-btn" @click="triggerH5Input('camera', 'image')">
                         <text class="trigger-icon">📷</text>
                         <text>拍照片</text>
                     </view>
-                    <view class="trigger-btn" @click="h5CameraVideo">
+                    <view class="trigger-btn" @click="triggerH5Input('camera', 'video')">
                         <text class="trigger-icon">📹</text>
                         <text>拍视频</text>
                     </view>
-                    <view class="trigger-btn" @click="h5AlbumPhoto">
+                    <view class="trigger-btn" @click="triggerH5Input('album', 'image')">
                         <text class="trigger-icon">🖼️</text>
                         <text>传照片</text>
                     </view>
-                    <view class="trigger-btn" @click="h5AlbumVideo">
+                    <view class="trigger-btn" @click="triggerH5Input('album', 'video')">
                         <text class="trigger-icon">🎞️</text>
                         <text>传视频</text>
                     </view>
@@ -329,52 +329,7 @@ const bindTimeChange = (e) => {
 
 
 
-// Helper to generate thumbnail for H5 video files
-const getVideoThumbnail = (file) => {
-    return new Promise((resolve) => {
-        // #ifdef H5
-        const video = document.createElement('video');
-        video.src = URL.createObjectURL(file);
-        video.muted = true;
-        video.playsInline = true;
-        video.currentTime = 0.5; // Capture at 0.5s
-
-        video.onloadeddata = () => {
-             // Delay slightly to ensure render
-             setTimeout(() => {
-                const canvas = document.createElement('canvas');
-                // Limit max dimensions
-                const maxDim = 640;
-                let w = video.videoWidth;
-                let h = video.videoHeight;
-                if (w > h && w > maxDim) { h = (maxDim/w)*h; w = maxDim; }
-                else if (h > w && h > maxDim) { w = (maxDim/h)*w; h = maxDim; }
-                
-                canvas.width = w;
-                canvas.height = h;
-                
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, w, h);
-                canvas.toBlob(blob => {
-                    resolve(blob);
-                    // Clean up
-                    URL.revokeObjectURL(video.src);
-                    video.remove();
-                }, 'image/jpeg', 0.7);
-             }, 200);
-        };
-        
-        video.onerror = () => {
-            URL.revokeObjectURL(video.src);
-            resolve(null);
-        };
-        // #endif
-        
-        // #ifndef H5
-        resolve(null);
-        // #endif
-    });
-};
+// Remove getVideoThumbnail function
 
 const uploadOneFile = (item) => {
     return new Promise(async (resolve, reject) => {
@@ -504,105 +459,41 @@ const handleBatchUpload = async (filePaths) => {
 
 
 
-const h5CameraPhoto = () => {
+const triggerH5Input = (sourceType, mediaType) => {
     // #ifdef H5
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    input.accept = 'image/*';
-    input.setAttribute('capture', 'environment'); // Force back camera
+    
+    // Set accept attribute
+    if (mediaType === 'video') {
+         input.accept = 'video/*';
+    } else {
+         input.accept = 'image/*';
+    }
+    
+    // Set capture attribute for camera
+    if (sourceType === 'camera') {
+        input.setAttribute('capture', 'environment');
+    }
+    
     input.onchange = (event) => {
         const files = event.target.files;
         if (files && files.length > 0) {
+            if (mediaType === 'video') {
+                uni.showLoading({ title: '准备上传...' });
+            }
+            
             const items = Array.from(files).map(file => ({
                 file: file,
                 path: URL.createObjectURL(file), // Preview URL
-                type: 'image'
+                type: mediaType
             }));
-            handleBatchUpload(items);
-        }
-    };
-    input.click();
-    // #endif
-};
-
-
-
-const h5CameraVideo = () => {
-    // #ifdef H5
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.accept = 'video/*';
-    input.setAttribute('capture', 'environment'); // Force back camera
-    input.onchange = async (event) => {
-        const files = event.target.files;
-        if (files && files.length > 0) {
-            uni.showLoading({ title: '处理视频中...' });
-            const items = [];
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                // Remove thumbnail generation as per user request
-                items.push({
-                    file: file,
-                    path: URL.createObjectURL(file), // Preview URL
-                    type: 'video'
-                });
+            
+            if (mediaType === 'video') {
+                uni.hideLoading();
             }
-            uni.hideLoading();
-            handleBatchUpload(items);
-        }
-    };
-    input.click();
-    // #endif
-};
-
-
-
-const h5AlbumPhoto = () => {
-    // #ifdef H5
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.accept = 'image/*';
-    // No capture -> Camera + Album (or just Album depending on OS)
-    input.onchange = (event) => {
-        const files = event.target.files;
-        if (files && files.length > 0) {
-             const items = Array.from(files).map(file => ({
-                file: file,
-                path: URL.createObjectURL(file),
-                type: 'image'
-            }));
-            handleBatchUpload(items);
-        }
-    };
-    input.click();
-    // #endif
-};
-
-const h5AlbumVideo = () => {
-    // #ifdef H5
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.accept = 'video/*';
-    // No capture
-    input.onchange = async (event) => {
-        const files = event.target.files;
-        if (files && files.length > 0) {
-            uni.showLoading({ title: '处理视频中...' });
-            const items = [];
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                // Remove thumbnail generation as per user request
-                items.push({
-                    file: file,
-                    path: URL.createObjectURL(file), // Preview URL
-                   type: 'video'
-                });
-            }
-            uni.hideLoading();
+            
             handleBatchUpload(items);
         }
     };
