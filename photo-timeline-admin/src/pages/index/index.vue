@@ -162,7 +162,6 @@
                   <view class="card-body">
                     <text class="date">{{ formatDate(item.date) }}</text>
                     <text class="title">{{ item.title || appConfig.defaultItemTitle }}</text>
-                    <text class="title">{{ item.title || appConfig.defaultItemTitle }}</text>
                   </view>
                   
                   <view class="delete-btn-overlay" @click.stop="deleteItem(item.id)" v-if="isAdmin">
