@@ -305,6 +305,13 @@ if ($uri === '/' || $uri === '/index.php') {
     exit();
 }
 
+// GET /verify-key
+if ($uri === '/verify-key' && $method === 'GET') {
+    verifyKey();
+    echo json_encode(["ok" => true]);
+    exit();
+}
+
 // POST /upload
 if ($uri === '/upload' && $method === 'POST') {
     verifyKey();
