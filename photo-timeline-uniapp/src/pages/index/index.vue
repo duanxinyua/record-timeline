@@ -29,43 +29,46 @@
               <view v-if="items.length === 0 && !isLoading" class="empty">
                 <text>{{ appConfig.emptyText }}</text>
               </view>
-              
-              <view 
-                v-for="(item, index) in items" 
-                :key="item.id" 
-                class="timeline-item"
-                :style="{ '--i': index }"
-              >
-                <view class="dot"></view>
-                <view class="card">
-                  <!-- 视频支持 -->
-                  <video 
-                    v-if="isVideo(item.src)"
-                    class="photo" 
-                    :src="item.src" 
-                    controls
-                  ></video>
-                  <!-- 图片（带懒加载） -->
-                  <image 
-                    v-else
-                    class="photo" 
-                    :src="item.thumb || item.src" 
-                    mode="aspectFill"
-                    lazy-load
-                    @click="previewImage(item.src)"
-                  ></image>
-                  <view class="card-body">
-                    <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
-                    <text class="title">{{ item.title || appConfig.defaultItemTitle }}</text>
-                    <view class="meta-row" v-if="item.taken_at">
-                      <text class="meta-text">拍摄: {{ item.taken_at }}</text>
-                    </view>
-                    <view class="meta-row location" v-if="item.address || (item.latitude && item.longitude)" @click.stop="openMap(item.latitude, item.longitude)">
-                      <text class="meta-text">{{ item.address || formatCoord(item.latitude, item.longitude) }}</text>
+
+              <template v-for="group in groupedItems" :key="group.key">
+                <view class="month-header">
+                  <view class="month-dot"></view>
+                  <text class="month-title">{{ group.key }}</text>
+                </view>
+                <view
+                  v-for="item in group.items"
+                  :key="item.id"
+                  class="timeline-item"
+                >
+                  <view class="dot"></view>
+                  <view class="card">
+                    <video
+                      v-if="isVideo(item.src)"
+                      class="photo"
+                      :src="item.src"
+                      controls
+                    ></video>
+                    <image
+                      v-else
+                      class="photo"
+                      :src="item.thumb || item.src"
+                      mode="aspectFill"
+                      lazy-load
+                      @click="previewImage(item.src, allImageUrls)"
+                    ></image>
+                    <view class="card-body">
+                      <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
+                      <text class="title" v-if="item.title">{{ item.title }}</text>
+                      <view class="meta-row" v-if="item.taken_at">
+                        <text class="meta-text">拍摄: {{ item.taken_at }}</text>
+                      </view>
+                      <view class="meta-row location" v-if="item.address || (item.latitude && item.longitude)" @click.stop="openMap(item.latitude, item.longitude)">
+                        <text class="meta-text">{{ item.address || formatCoord(item.latitude, item.longitude) }}</text>
+                      </view>
                     </view>
                   </view>
                 </view>
-              </view>
+              </template>
             </view>
             
             <!-- 加载状态 -->
@@ -91,7 +94,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, reactive } from 'vue';
+import { ref, computed, onMounted, reactive } from 'vue';
 import { formatDate, isVideo, previewImage } from '../../utils.js';
 import * as api from '../../api.js';
 
@@ -130,6 +133,28 @@ const items = ref([]);
 const page = ref(1);
 const hasMore = ref(true);
 const isLoading = ref(false);
+
+// 按年月分组
+const groupedItems = computed(() => {
+    const groups = [];
+    let currentKey = '';
+    for (const item of items.value) {
+        const date = new Date(item.date);
+        const key = isNaN(date.getTime()) ? '未知时间' : `${date.getFullYear()}年${date.getMonth() + 1}月`;
+        if (key !== currentKey) {
+            groups.push({ key, items: [item] });
+            currentKey = key;
+        } else {
+            groups[groups.length - 1].items.push(item);
+        }
+    }
+    return groups;
+});
+
+// 所有图片 URL（用于全屏滑动浏览）
+const allImageUrls = computed(() => {
+    return items.value.filter(item => !isVideo(item.src)).map(item => item.src);
+});
 
 // 加载配置
 const loadConfig = async () => {
@@ -299,6 +324,32 @@ onMounted(() => {
   flex-direction: column;
   gap: 32px;
   padding-left: 0;
+}
+
+.month-header {
+  position: relative;
+  padding-left: 60px;
+  display: flex;
+  align-items: center;
+}
+
+.month-dot {
+  position: absolute;
+  left: 17px;
+  width: 20px;
+  height: 20px;
+  background: var(--accent);
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(230, 180, 117, 0.5);
+  z-index: 2;
+}
+
+.month-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.02em;
 }
 
 .empty {

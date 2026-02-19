@@ -3,7 +3,7 @@
 // API 路由器和控制器
 
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, x-api-key");
 header("Content-Type: application/json; charset=UTF-8");
 
@@ -541,6 +541,42 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'POST') {
     $data['id'] = (int)$id;
     $data['address'] = $address;
     echo json_encode($data);
+    exit();
+}
+
+// PUT /items/{id}
+if (preg_match('#^/items/(\d+)$#', $uri, $matches) && $method === 'PUT') {
+    verifyKey();
+    $id = $matches[1];
+    $data = getJsonBody();
+
+    $stmt = $pdo->prepare("SELECT * FROM timelineitem WHERE id = ?");
+    $stmt->execute([$id]);
+    if (!$stmt->fetch()) {
+        http_response_code(404);
+        echo json_encode(["detail" => "条目不存在"]);
+        exit();
+    }
+
+    $fields = ['title', 'date'];
+    $setClauses = [];
+    $params = [];
+    foreach ($fields as $field) {
+        if (isset($data[$field])) {
+            $setClauses[] = "$field = ?";
+            $params[] = $data[$field];
+        }
+    }
+
+    if (count($setClauses) > 0) {
+        $params[] = $id;
+        $stmt = $pdo->prepare("UPDATE timelineitem SET " . implode(', ', $setClauses) . " WHERE id = ?");
+        $stmt->execute($params);
+    }
+
+    $stmt = $pdo->prepare("SELECT * FROM timelineitem WHERE id = ?");
+    $stmt->execute([$id]);
+    echo json_encode($stmt->fetch());
     exit();
 }
 

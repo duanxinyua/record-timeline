@@ -149,48 +149,58 @@
               <view v-if="items.length === 0 && !isLoading" class="empty">
                 <text>{{ appConfig.emptyText }}</text>
               </view>
-              
-              <view 
-                v-for="(item, index) in items" 
-                :key="item.id" 
-                class="timeline-item"
-                :style="{ '--i': index }"
-              >
-                <view class="dot"></view>
-                <view class="card">
-                  <video 
-                    v-if="isVideo(item.src) && !showSettingsModal"
-                    class="photo" 
-                    :src="item.src" 
-                    controls
-                  ></video>
-                   <view v-else-if="isVideo(item.src) && showSettingsModal" class="photo video-placeholder">
-                       <text style="color: #fff;">📹</text>
-                   </view>
-                  <image 
-                    v-else
-                    class="photo" 
-                    :src="item.thumb || item.src" 
-                    mode="aspectFill"
-                    lazy-load
-                    @click="previewImage(item.src)"
-                  ></image>
-                  <view class="card-body">
-                    <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
-                    <text class="title">{{ item.title || appConfig.defaultItemTitle }}</text>
-                    <view class="meta-row" v-if="item.taken_at">
-                      <text class="meta-text">拍摄: {{ item.taken_at }}</text>
+
+              <template v-for="group in groupedItems" :key="group.key">
+                <view class="month-header">
+                  <view class="month-dot"></view>
+                  <text class="month-title">{{ group.key }}</text>
+                </view>
+                <view
+                  v-for="item in group.items"
+                  :key="item.id"
+                  class="timeline-item"
+                >
+                  <view class="dot"></view>
+                  <view class="card">
+                    <video
+                      v-if="isVideo(item.src) && !showSettingsModal && !showEditModal"
+                      class="photo"
+                      :src="item.src"
+                      controls
+                    ></video>
+                    <view v-else-if="isVideo(item.src)" class="photo video-placeholder">
+                      <text style="color: #fff;">📹</text>
                     </view>
-                    <view class="meta-row location" v-if="item.address || (item.latitude && item.longitude)" @click.stop="openMap(item.latitude, item.longitude)">
-                      <text class="meta-text">{{ item.address || formatCoord(item.latitude, item.longitude) }}</text>
+                    <image
+                      v-else
+                      class="photo"
+                      :src="item.thumb || item.src"
+                      mode="aspectFill"
+                      lazy-load
+                      @click="previewImage(item.src, allImageUrls)"
+                    ></image>
+                    <view class="card-body">
+                      <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
+                      <text class="title" v-if="item.title">{{ item.title }}</text>
+                      <view class="meta-row" v-if="item.taken_at">
+                        <text class="meta-text">拍摄: {{ item.taken_at }}</text>
+                      </view>
+                      <view class="meta-row location" v-if="item.address || (item.latitude && item.longitude)" @click.stop="openMap(item.latitude, item.longitude)">
+                        <text class="meta-text">{{ item.address || formatCoord(item.latitude, item.longitude) }}</text>
+                      </view>
                     </view>
-                  </view>
-                  
-                  <view class="delete-btn-overlay" @click.stop="confirmDelete(item.id)" v-if="isAdmin">
-                      <text class="delete-icon">🗑️</text>
+
+                    <view class="card-actions" v-if="isAdmin">
+                      <view class="action-btn" @click.stop="openEdit(item)">
+                        <text class="action-icon">✏️</text>
+                      </view>
+                      <view class="action-btn danger" @click.stop="confirmDelete(item.id)">
+                        <text class="action-icon">🗑️</text>
+                      </view>
+                    </view>
                   </view>
                 </view>
-              </view>
+              </template>
             </view>
             
             <!-- 加载状态 -->
@@ -263,6 +273,36 @@
             </view>
         </view>
     </view>
+
+    <!-- 编辑条目弹窗 -->
+    <view class="modal-overlay" v-if="showEditModal">
+        <view class="modal-content">
+            <view class="modal-header">
+                <text class="modal-title">编辑条目</text>
+                <view class="close-btn" @click="closeEdit">✕</view>
+            </view>
+            <view class="modal-body">
+                <view class="field">
+                    <text class="label-text">标题</text>
+                    <input class="uni-input" v-model="editItemData.title" placeholder="照片标题" />
+                </view>
+                <view class="field">
+                    <text class="label-text">日期时间</text>
+                    <view class="datetime-group">
+                        <picker mode="date" :value="editItemData.dateStr" @change="editItemDateChange">
+                            <view class="input-picker">{{ editItemData.dateStr || '选择日期' }}</view>
+                        </picker>
+                        <picker mode="time" :value="editItemData.timeStr" @change="editItemTimeChange">
+                            <view class="input-picker">{{ editItemData.timeStr || '选择时间' }}</view>
+                        </picker>
+                    </view>
+                </view>
+            </view>
+            <view class="modal-footer">
+                <button class="btn primary" @click="handleSaveEdit">保存</button>
+            </view>
+        </view>
+    </view>
   </view>
 </template>
 
@@ -303,6 +343,28 @@ const hasMore = ref(true);
 const isLoading = ref(false);
 
 const isAdmin = computed(() => !!adminKey.value);
+
+// 按年月分组
+const groupedItems = computed(() => {
+    const groups = [];
+    let currentKey = '';
+    for (const item of items.value) {
+        const date = new Date(item.date);
+        const key = isNaN(date.getTime()) ? '未知时间' : `${date.getFullYear()}年${date.getMonth() + 1}月`;
+        if (key !== currentKey) {
+            groups.push({ key, items: [item] });
+            currentKey = key;
+        } else {
+            groups[groups.length - 1].items.push(item);
+        }
+    }
+    return groups;
+});
+
+// 所有图片 URL（用于全屏滑动浏览）
+const allImageUrls = computed(() => {
+    return items.value.filter(item => !isVideo(item.src)).map(item => item.src);
+});
 
 // ==================== 日期选择 ====================
 
@@ -528,6 +590,54 @@ const confirmDelete = (id) => {
             }
         }
     });
+};
+
+// ==================== 编辑条目 ====================
+
+const showEditModal = ref(false);
+const editItemData = reactive({ id: null, title: '', dateStr: '', timeStr: '' });
+
+const openEdit = (item) => {
+    editItemData.id = item.id;
+    editItemData.title = item.title || '';
+    const d = new Date(item.date);
+    if (!isNaN(d.getTime())) {
+        editItemData.dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        editItemData.timeStr = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    } else {
+        editItemData.dateStr = '';
+        editItemData.timeStr = '';
+    }
+    showEditModal.value = true;
+};
+
+const closeEdit = () => { showEditModal.value = false; };
+const editItemDateChange = (e) => { editItemData.dateStr = e.detail.value; };
+const editItemTimeChange = (e) => { editItemData.timeStr = e.detail.value; };
+
+const handleSaveEdit = async () => {
+    const updateData = { title: editItemData.title };
+    if (editItemData.dateStr) {
+        const dateStr = editItemData.dateStr + (editItemData.timeStr ? 'T' + editItemData.timeStr : 'T00:00');
+        updateData.date = new Date(dateStr).toISOString();
+    }
+    try {
+        const updated = await api.updateItem(adminKey.value, editItemData.id, updateData);
+        const idx = items.value.findIndex(i => String(i.id) === String(updated.id));
+        if (idx >= 0) {
+            items.value[idx] = updated;
+        }
+        showEditModal.value = false;
+        uni.showToast({ title: '已更新', icon: 'success' });
+    } catch (e) {
+        if (e.message === 'AUTH_FAILED') {
+            uni.showToast({ title: '密钥失效', icon: 'none' });
+            adminKey.value = '';
+            uni.removeStorageSync('peanut_api_key');
+        } else {
+            uni.showToast({ title: '更新失败', icon: 'none' });
+        }
+    }
 };
 
 // ==================== 配置管理 ====================
@@ -1069,6 +1179,32 @@ onMounted(() => {
   padding-left: 0;
 }
 
+.month-header {
+  position: relative;
+  padding-left: 60px;
+  display: flex;
+  align-items: center;
+}
+
+.month-dot {
+  position: absolute;
+  left: 17px;
+  width: 20px;
+  height: 20px;
+  background: var(--accent);
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(230, 180, 117, 0.5);
+  z-index: 2;
+}
+
+.month-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+
 .timeline-item {
   position: relative;
   width: 100%;
@@ -1176,10 +1312,16 @@ onMounted(() => {
   letter-spacing: 0.02em;
 }
 
-.delete-btn-overlay {
+.card-actions {
     position: absolute;
     top: 10px;
     right: 10px;
+    display: flex;
+    gap: 6px;
+    z-index: 10;
+}
+
+.action-btn {
     background: rgba(0, 0, 0, 0.5);
     border-radius: 50%;
     width: 32px;
@@ -1187,13 +1329,12 @@ onMounted(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10;
     cursor: pointer;
+    backdrop-filter: blur(4px);
 }
 
-.delete-icon {
-    font-size: 18px;
-    color: #fff;
+.action-icon {
+    font-size: 14px;
 }
 
 /* ==================== 加载状态 ==================== */
