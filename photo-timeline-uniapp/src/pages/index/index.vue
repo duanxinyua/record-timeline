@@ -396,11 +396,12 @@ onMounted(async () => {
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(230, 213, 196, 0.5);
   border-radius: 16px;
-  padding: 6px 6px 6px 14px;
+  padding: 8px 8px 8px 16px;
   box-shadow: 0 4px 16px rgba(93, 64, 55, 0.06);
   transition: box-shadow 0.3s, border-color 0.3s;
   touch-action: manipulation;
   -webkit-touch-callout: none;
+  overflow: visible;
 }
 
 .search-bar:focus-within {
@@ -420,15 +421,18 @@ onMounted(async () => {
   background: transparent;
   border: none;
   outline: none;
-  padding: 8px 0;
+  padding: 10px 4px;
   font-size: 15px;
   color: var(--ink);
-  min-height: 24px;
-  line-height: 24px;
+  height: 40px;
+  min-height: 40px;
+  line-height: 20px;
+  box-sizing: border-box;
   -webkit-appearance: none;
   appearance: none;
   touch-action: manipulation;
   pointer-events: auto;
+  overflow: visible;
 }
 
 .search-clear {
