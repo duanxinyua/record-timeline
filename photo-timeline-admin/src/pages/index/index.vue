@@ -380,11 +380,8 @@ const triggerH5Input = (sourceType, mediaType) => {
         if (files && files.length > 0) {
             const items = [];
             for (const file of Array.from(files)) {
-                // 在上传前从原始文件提取元数据（EXIF + lastModified 兜底）
-                let clientExif = null;
-                if (mediaType === 'image') {
-                    clientExif = await extractMetadata(file);
-                }
+                // 在上传前从原始文件提取元数据（图片 EXIF / 视频 MP4 moov / lastModified 兜底）
+                let clientExif = await extractMetadata(file);
                 items.push({
                     file: file,
                     path: URL.createObjectURL(file),
