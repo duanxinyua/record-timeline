@@ -125,6 +125,30 @@ export const createItem = (apiKey, itemData) => {
 };
 
 /**
+ * 更新时间轴条目
+ */
+export const updateItem = (apiKey, id, itemData) => {
+    return new Promise((resolve, reject) => {
+        uni.request({
+            url: `${API_BASE}/items/${id}`,
+            method: 'PUT',
+            header: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+            data: itemData,
+            success: (res) => {
+                if (res.statusCode === 200) {
+                    resolve(res.data);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
+                } else {
+                    reject(new Error('更新失败'));
+                }
+            },
+            fail: (e) => reject(e)
+        });
+    });
+};
+
+/**
  * 删除时间轴条目
  */
 export const deleteItem = (apiKey, id) => {

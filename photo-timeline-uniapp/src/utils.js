@@ -30,6 +30,7 @@ export const isVideo = (url) => {
 /**
  * 预览图片
  */
-export const previewImage = (url) => {
-    uni.previewImage({ urls: [url] });
+export const previewImage = (url, allUrls = []) => {
+    const urls = allUrls.length > 0 ? allUrls : [url];
+    uni.previewImage({ current: url, urls });
 };
