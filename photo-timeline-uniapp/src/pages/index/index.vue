@@ -27,14 +27,18 @@
 
       <!-- 搜索框 -->
       <view class="search-bar">
+        <view class="search-icon">🔍</view>
         <input
+          type="text"
           class="search-input"
           v-model="searchQuery"
           placeholder="搜索标题、描述或地点..."
+          confirm-type="search"
           @confirm="onSearch"
+          @input="onSearchInput"
         />
         <view class="search-clear" v-if="searchQuery" @click="clearSearch">✕</view>
-        <button class="search-btn" @click="onSearch">搜索</button>
+        <view class="search-btn" @click="onSearch">搜索</view>
       </view>
 
       <!-- 时间轴滚动区域 -->
@@ -243,6 +247,14 @@ const loadMore = () => {
     }
 };
 
+// 搜索输入事件（H5 端兼容）
+const onSearchInput = (e) => {
+    // uni-app H5 mode: e.detail.value; native: e.target.value
+    if (e.detail && e.detail.value !== undefined) {
+        searchQuery.value = e.detail.value;
+    }
+};
+
 // 搜索操作
 const onSearch = () => {
     load(true);
@@ -376,51 +388,86 @@ onMounted(async () => {
 .search-bar {
   display: flex;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   position: relative;
   z-index: 10;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(230, 213, 196, 0.5);
+  border-radius: 16px;
+  padding: 6px 6px 6px 14px;
+  box-shadow: 0 4px 16px rgba(93, 64, 55, 0.06);
+  transition: box-shadow 0.3s, border-color 0.3s;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+}
+
+.search-bar:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 4px 20px rgba(230, 180, 117, 0.2);
+}
+
+.search-icon {
+  font-size: 16px;
+  margin-right: 8px;
+  flex-shrink: 0;
+  opacity: 0.5;
 }
 
 .search-input {
   flex: 1;
-  background: rgba(255, 255, 255, 0.6);
-  border: 1px solid var(--line);
-  padding: 10px 36px 10px 16px;
-  border-radius: 20px;
-  font-size: 0.95rem;
-  transition: border-color 0.2s;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 8px 0;
+  font-size: 15px;
+  color: var(--ink);
+  min-height: 24px;
+  line-height: 24px;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
   pointer-events: auto;
 }
 
-.search-input:focus {
-  border-color: var(--accent);
-}
-
 .search-clear {
-  position: absolute;
-  right: 80px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 24px;
-  height: 24px;
-  line-height: 24px;
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
   text-align: center;
   color: #999;
-  font-size: 14px;
-  z-index: 2;
+  font-size: 13px;
+  flex-shrink: 0;
   cursor: pointer;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+
+.search-clear:active {
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .search-btn {
-  margin-left: 10px;
-  padding: 0 16px;
-  height: 40px;
-  line-height: 40px;
-  border-radius: 20px;
-  background: var(--accent);
+  flex-shrink: 0;
+  padding: 0 18px;
+  height: 36px;
+  line-height: 36px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: #fff;
-  font-size: 0.95rem;
+  font-size: 14px;
+  font-weight: 500;
   border: none;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+  text-align: center;
+  touch-action: manipulation;
+}
+
+.search-btn:active {
+  opacity: 0.85;
+  transform: scale(0.96);
 }
 
 .timeline {
