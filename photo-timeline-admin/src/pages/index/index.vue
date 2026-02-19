@@ -173,7 +173,19 @@
             
             <!-- Loading More Indicator -->
             <view class="loading-more" v-if="items.length > 0">
-                <text class="loading-text">{{ isLoading ? '加载中...' : (hasMore ? '上拉加载更多' : '已经是最后一条数据了') }}</text>
+                <template v-if="isLoading">
+                    <text class="loading-text">加载中...</text>
+                </template>
+                <template v-else-if="hasMore">
+                     <text class="loading-text">上拉加载更多</text>
+                </template>
+                <template v-else>
+                    <view class="no-more-data">
+                        <view class="divider"></view>
+                        <text class="no-more-text">THE END</text>
+                        <view class="divider"></view>
+                    </view>
+                </template>
             </view>
         </view>
       </scroll-view>
@@ -1113,18 +1125,34 @@ onMounted(() => {
   padding-left: 0;
 }
 
-.empty {
-  padding: 40px 32px;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.4);
-  color: var(--muted);
-  border: 2px dashed var(--line);
+.loading-more {
+  padding: 30px 0;
   text-align: center;
 }
 
-.empty text {
-  font-size: 0.9rem;
-  opacity: 0.8;
+.loading-text {
+    font-size: 14px;
+    color: #999;
+}
+
+.no-more-data {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.divider {
+    width: 30px;
+    height: 1px;
+    background-color: #ddd;
+}
+
+.no-more-text {
+    font-size: 12px;
+    color: #aaa;
+    letter-spacing: 1px;
+    font-weight: 500;
 }
 
 
