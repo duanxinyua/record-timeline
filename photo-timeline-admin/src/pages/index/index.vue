@@ -250,6 +250,7 @@ import { ref, computed, onMounted, reactive } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import { formatDate, isVideo, previewImage } from '../../utils.js';
 import * as api from '../../api.js';
+import { readExif } from '../../exif.js';
 
 // ==================== 状态 ====================
 
@@ -296,9 +297,10 @@ const clearSelection = () => {
 const uploadOneFile = async (item) => {
     const filePath = typeof item === 'string' ? item : (item.path || item.src);
     const fileObj = typeof item === 'string' ? null : item.file;
+    const clientExif = (typeof item === 'object') ? item.clientExif : null;
 
     try {
-        const data = await api.uploadFile(adminKey.value, filePath, fileObj);
+        const data = await api.uploadFile(adminKey.value, filePath, fileObj, clientExif);
         return data;
     } catch (error) {
         if (error.message === 'AUTH_FAILED') {
@@ -349,14 +351,23 @@ const triggerH5Input = (sourceType, mediaType) => {
         input.setAttribute('capture', 'environment');
     }
 
-    input.onchange = (event) => {
+    input.onchange = async (event) => {
         const files = event.target.files;
         if (files && files.length > 0) {
-            const items = Array.from(files).map(file => ({
-                file: file,
-                path: URL.createObjectURL(file),
-                type: mediaType
-            }));
+            const items = [];
+            for (const file of Array.from(files)) {
+                // 在上传前从原始文件读取 EXIF（图片才需要）
+                let clientExif = null;
+                if (mediaType === 'image') {
+                    clientExif = await readExif(file);
+                }
+                items.push({
+                    file: file,
+                    path: URL.createObjectURL(file),
+                    type: mediaType,
+                    clientExif: clientExif
+                });
+            }
             handleBatchUpload(items);
         }
     };

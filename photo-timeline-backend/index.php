@@ -127,11 +127,12 @@ function gpsToDecimal($coords, $ref) {
 }
 
 /**
- * 解析分数字符串（如 "355/10"）
+ * 解析分数字符串（如 "355/10"），也兼容整数和浮点数
  */
-function evalFraction($str) {
-    if (!is_string($str)) return 0;
-    $parts = explode('/', $str);
+function evalFraction($val) {
+    if (is_numeric($val)) return floatval($val);
+    if (!is_string($val)) return 0;
+    $parts = explode('/', $val);
     if (count($parts) == 1) return floatval($parts[0]);
     $denominator = floatval($parts[1]);
     if ($denominator == 0) return 0;
@@ -295,18 +296,47 @@ if ($uri === '/upload' && $method === 'POST') {
 
         // 提取 EXIF 信息
         $exifData = [];
-        if (in_array($ext, ['jpg', 'jpeg']) && function_exists('exif_read_data')) {
-            $exif = @exif_read_data($targetPath);
+
+        // 1. 服务端 EXIF 读取（支持 JPEG 和 TIFF）
+        if (in_array($ext, ['jpg', 'jpeg', 'tiff', 'tif']) && function_exists('exif_read_data')) {
+            $exif = @exif_read_data($targetPath, 'ANY_TAG', true);
             if ($exif) {
-                if (isset($exif['DateTimeOriginal'])) {
-                    $exifData['date'] = $exif['DateTimeOriginal'];
+                // 拍摄时间：优先 DateTimeOriginal > DateTimeDigitized > DateTime
+                if (!empty($exif['EXIF']['DateTimeOriginal'])) {
+                    $exifData['date'] = $exif['EXIF']['DateTimeOriginal'];
+                } elseif (!empty($exif['EXIF']['DateTimeDigitized'])) {
+                    $exifData['date'] = $exif['EXIF']['DateTimeDigitized'];
+                } elseif (!empty($exif['IFD0']['DateTime'])) {
+                    $exifData['date'] = $exif['IFD0']['DateTime'];
                 }
-                if (isset($exif['GPSLatitude'], $exif['GPSLatitudeRef'],
-                           $exif['GPSLongitude'], $exif['GPSLongitudeRef'])) {
-                    $exifData['latitude'] = gpsToDecimal($exif['GPSLatitude'], $exif['GPSLatitudeRef']);
-                    $exifData['longitude'] = gpsToDecimal($exif['GPSLongitude'], $exif['GPSLongitudeRef']);
+                // 兼容旧格式（非分节读取）
+                if (empty($exifData['date'])) {
+                    if (!empty($exif['DateTimeOriginal'])) {
+                        $exifData['date'] = $exif['DateTimeOriginal'];
+                    } elseif (!empty($exif['DateTime'])) {
+                        $exifData['date'] = $exif['DateTime'];
+                    }
+                }
+
+                // GPS 坐标
+                $gps = isset($exif['GPS']) ? $exif['GPS'] : $exif;
+                if (isset($gps['GPSLatitude'], $gps['GPSLatitudeRef'],
+                           $gps['GPSLongitude'], $gps['GPSLongitudeRef'])) {
+                    $exifData['latitude'] = gpsToDecimal($gps['GPSLatitude'], $gps['GPSLatitudeRef']);
+                    $exifData['longitude'] = gpsToDecimal($gps['GPSLongitude'], $gps['GPSLongitudeRef']);
                 }
             }
+        }
+
+        // 2. 客户端 EXIF 兜底（前端 JS 解析后通过 formData 传递）
+        if (empty($exifData['date']) && !empty($_POST['exif_date'])) {
+            $exifData['date'] = $_POST['exif_date'];
+        }
+        if (empty($exifData['latitude']) && !empty($_POST['exif_lat'])) {
+            $exifData['latitude'] = floatval($_POST['exif_lat']);
+        }
+        if (empty($exifData['longitude']) && !empty($_POST['exif_lng'])) {
+            $exifData['longitude'] = floatval($_POST['exif_lng']);
         }
 
         // 生成缩略图（仅图片类型，文件名与原图关联）
@@ -346,16 +376,15 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'GET') {
 
         $items = $stmt->fetchAll();
 
-        // 返回总数以支持前端判断分页
+        // 返回总数以支持前端判断分页，同时保持主体为数组兼容旧版前端
         $countStmt = $pdo->query("SELECT COUNT(*) FROM timelineitem");
         $total = (int)$countStmt->fetchColumn();
 
-        echo json_encode([
-            'items' => $items,
-            'total' => $total,
-            'page' => $page,
-            'limit' => $limit
-        ]);
+        header('X-Total-Count: ' . $total);
+        header('X-Page: ' . $page);
+        header('X-Limit: ' . $limit);
+
+        echo json_encode($items);
     } else {
         // 无分页时也统一使用 DESC 排序
         $stmt = $pdo->query("SELECT * FROM timelineitem ORDER BY date DESC");

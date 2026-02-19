@@ -128,8 +128,20 @@ export const deleteItem = (apiKey, id) => {
 
 /**
  * 上传文件
+ * @param {string} apiKey
+ * @param {string} filePath
+ * @param {File|null} fileObj
+ * @param {{date?: string, latitude?: number, longitude?: number}|null} clientExif - 客户端提取的 EXIF
  */
-export const uploadFile = (apiKey, filePath, fileObj = null) => {
+export const uploadFile = (apiKey, filePath, fileObj = null, clientExif = null) => {
+    // 将客户端 EXIF 数据作为 formData 字段发送
+    const formData = {};
+    if (clientExif) {
+        if (clientExif.date) formData.exif_date = clientExif.date;
+        if (clientExif.latitude != null) formData.exif_lat = String(clientExif.latitude);
+        if (clientExif.longitude != null) formData.exif_lng = String(clientExif.longitude);
+    }
+
     return new Promise((resolve, reject) => {
         uni.uploadFile({
             url: `${API_BASE}/upload`,
@@ -137,6 +149,7 @@ export const uploadFile = (apiKey, filePath, fileObj = null) => {
             file: fileObj,
             name: 'file',
             header: { 'x-api-key': apiKey },
+            formData: formData,
             success: (uploadRes) => {
                 if (uploadRes.statusCode === 403) {
                     reject(new Error('AUTH_FAILED'));
