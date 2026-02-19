@@ -59,6 +59,7 @@
                     <view class="card-body">
                       <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
                       <text class="title" v-if="item.title">{{ item.title }}</text>
+                      <text class="description" v-if="item.description">{{ item.description }}</text>
                       <view class="meta-row" v-if="item.taken_at">
                         <text class="meta-text">拍摄: {{ item.taken_at }}</text>
                       </view>
@@ -433,6 +434,14 @@ onMounted(() => {
   color: var(--ink);
   line-height: 1.4;
   margin-top: 4px;
+}
+
+.description {
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .meta-row {

@@ -36,6 +36,16 @@
           />
         </view>
         <view class="field">
+          <text class="label-text">说点什么（可选）</text>
+          <textarea
+            class="uni-textarea"
+            v-model="descriptionValue"
+            placeholder="记录当时的心情..."
+            :maxlength="500"
+            auto-height
+          />
+        </view>
+        <view class="field">
           <view class="field-header">
             <text class="label-text">照片/视频</text>
             <text class="clear-all-btn" v-if="batchList.length > 0" @click="clearSelection">清除全部({{ batchList.length }})</text>
@@ -182,6 +192,7 @@
                     <view class="card-body">
                       <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
                       <text class="title" v-if="item.title">{{ item.title }}</text>
+                      <text class="description" v-if="item.description">{{ item.description }}</text>
                       <view class="meta-row" v-if="item.taken_at">
                         <text class="meta-text">拍摄: {{ item.taken_at }}</text>
                       </view>
@@ -287,6 +298,10 @@
                     <input class="uni-input" v-model="editItemData.title" placeholder="照片标题" />
                 </view>
                 <view class="field">
+                    <text class="label-text">说点什么</text>
+                    <textarea class="uni-textarea" v-model="editItemData.description" placeholder="记录当时的心情..." :maxlength="500" auto-height />
+                </view>
+                <view class="field">
                     <text class="label-text">日期时间</text>
                     <view class="datetime-group">
                         <picker mode="date" :value="editItemData.dateStr" @change="editItemDateChange">
@@ -333,6 +348,7 @@ const showSettingsModal = ref(false);
 const dateValue = ref('');
 const timeValue = ref('');
 const captionValue = ref('');
+const descriptionValue = ref('');
 const items = ref([]);
 const batchList = ref([]);
 const adminKey = ref('');
@@ -414,6 +430,39 @@ const showAddMenu = () => {
     });
 };
 
+const captureVideoFrame = (file) => {
+    // #ifdef H5
+    return new Promise((resolve) => {
+        const video = document.createElement('video');
+        video.preload = 'auto';
+        video.muted = true;
+        video.playsInline = true;
+        const url = URL.createObjectURL(file);
+        video.src = url;
+        const cleanup = () => URL.revokeObjectURL(url);
+        let resolved = false;
+        const done = (result) => { if (!resolved) { resolved = true; cleanup(); resolve(result); } };
+        video.onloadeddata = () => { video.currentTime = Math.min(1, video.duration * 0.1); };
+        video.onseeked = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.min(video.videoWidth, 800);
+                canvas.height = Math.round(canvas.width * video.videoHeight / video.videoWidth);
+                canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+                canvas.toBlob((blob) => {
+                    done(blob ? new File([blob], 'thumb.jpg', { type: 'image/jpeg' }) : null);
+                }, 'image/jpeg', 0.7);
+            } catch (e) { done(null); }
+        };
+        video.onerror = () => done(null);
+        setTimeout(() => done(null), 8000);
+    });
+    // #endif
+    // #ifndef H5
+    return Promise.resolve(null);
+    // #endif
+};
+
 const uploadOneFile = async (item) => {
     const filePath = typeof item === 'string' ? item : (item.path || item.src);
     const fileObj = typeof item === 'string' ? null : item.file;
@@ -441,6 +490,21 @@ const handleBatchUpload = async (filePaths) => {
         for (let i = 0; i < filePaths.length; i++) {
             uni.showLoading({ title: `正在上传 ${i+1}/${filePaths.length}` });
             const data = await uploadOneFile(filePaths[i]);
+
+            // 视频无缩略图时，客户端截帧并上传
+            if (isVideo(data.url) && !data.thumb) {
+                const fileObj = (typeof filePaths[i] === 'object') ? filePaths[i].file : null;
+                if (fileObj) {
+                    const frameFile = await captureVideoFrame(fileObj);
+                    if (frameFile) {
+                        try {
+                            const thumbData = await api.uploadFile(adminKey.value, URL.createObjectURL(frameFile), frameFile);
+                            data.thumb = thumbData.url;
+                        } catch (e) { /* 截帧上传失败不影响主流程 */ }
+                    }
+                }
+            }
+
             batchList.value.push({
                 src: data.url,
                 thumb: data.thumb,
@@ -546,6 +610,7 @@ const addItems = async () => {
             const newItem = {
                 date: itemDate.toISOString(),
                 title: (i === 0) ? (captionValue.value || item.name.replace(/\.[^/.]+$/, "")) : '',
+                description: (i === 0) ? (descriptionValue.value || null) : null,
                 src: item.src,
                 thumb: item.thumb,
                 latitude: item.exif ? item.exif.latitude : null,
@@ -559,6 +624,7 @@ const addItems = async () => {
 
         uni.showToast({ title: '全部发布成功', icon: 'success' });
         captionValue.value = '';
+        descriptionValue.value = '';
         batchList.value = [];
     } catch (e) {
         uni.showToast({ title: '发布过程中出错', icon: 'none' });
@@ -595,11 +661,12 @@ const confirmDelete = (id) => {
 // ==================== 编辑条目 ====================
 
 const showEditModal = ref(false);
-const editItemData = reactive({ id: null, title: '', dateStr: '', timeStr: '' });
+const editItemData = reactive({ id: null, title: '', description: '', dateStr: '', timeStr: '' });
 
 const openEdit = (item) => {
     editItemData.id = item.id;
     editItemData.title = item.title || '';
+    editItemData.description = item.description || '';
     const d = new Date(item.date);
     if (!isNaN(d.getTime())) {
         editItemData.dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -616,7 +683,7 @@ const editItemDateChange = (e) => { editItemData.dateStr = e.detail.value; };
 const editItemTimeChange = (e) => { editItemData.timeStr = e.detail.value; };
 
 const handleSaveEdit = async () => {
-    const updateData = { title: editItemData.title };
+    const updateData = { title: editItemData.title, description: editItemData.description || null };
     if (editItemData.dateStr) {
         const dateStr = editItemData.dateStr + (editItemData.timeStr ? 'T' + editItemData.timeStr : 'T00:00');
         updateData.date = new Date(dateStr).toISOString();
@@ -1077,6 +1144,20 @@ onMounted(() => {
   color: var(--ink);
 }
 
+.uni-textarea {
+  border: 1px solid var(--line);
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.5);
+  min-height: 80px;
+  width: 100%;
+  color: var(--ink);
+  line-height: 1.6;
+  box-sizing: border-box;
+}
+
 .actions {
   display: flex;
   gap: 16px;
@@ -1293,6 +1374,14 @@ onMounted(() => {
   color: var(--ink);
   line-height: 1.4;
   margin-top: 4px;
+}
+
+.description {
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .meta-row {
