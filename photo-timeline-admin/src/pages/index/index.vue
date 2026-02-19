@@ -144,6 +144,7 @@
         <text class="h2">{{ appConfig.timelineTitle }}</text>
         <view class="nav">
           <button class="btn icon" @click="generateMissingThumbs" v-if="isAdmin" title="补生成视频封面">🎬</button>
+          <button class="btn icon" @click="openTrash" v-if="isAdmin" title="回收站">🗑️</button>
           <button class="btn icon" @click="openSettings" v-if="isAdmin">⚙️</button>
         </view>
       </view>
@@ -316,6 +317,50 @@
             </view>
             <view class="modal-footer">
                 <button class="btn primary" @click="handleSaveEdit">保存</button>
+            </view>
+        </view>
+    </view>
+
+    <!-- 回收站弹窗 -->
+    <view class="modal-overlay" v-if="showTrashModal">
+        <view class="modal-content trash-modal">
+            <view class="modal-header">
+                <text class="modal-title">🗑️ 回收站</text>
+                <view class="close-btn" @click="closeTrash">✕</view>
+            </view>
+            <view class="modal-body">
+                <view v-if="trashItems.length === 0" class="trash-empty">
+                    <text style="font-size: 2.5rem; margin-bottom: 12px;">✨</text>
+                    <text class="label-text">回收站是空的</text>
+                </view>
+                <view v-else class="trash-list">
+                    <view class="trash-item" v-for="item in trashItems" :key="item.id">
+                        <image
+                            v-if="!isVideo(item.src)"
+                            class="trash-thumb"
+                            :src="item.thumb || item.src"
+                            mode="aspectFill"
+                        ></image>
+                        <view v-else class="trash-thumb video-placeholder">
+                            <text style="color: #fff; font-size: 1.2rem;">📹</text>
+                        </view>
+                        <view class="trash-info">
+                            <text class="trash-title">{{ item.title || '未命名' }}</text>
+                            <text class="trash-date">删除于 {{ formatDate(item.deleted_at) }}</text>
+                        </view>
+                        <view class="trash-actions">
+                            <view class="trash-action-btn restore" @click="handleRestore(item.id)">
+                                <text>恢复</text>
+                            </view>
+                            <view class="trash-action-btn destroy" @click="handlePermanentDelete(item.id)">
+                                <text>彻底删除</text>
+                            </view>
+                        </view>
+                    </view>
+                </view>
+            </view>
+            <view class="modal-footer" v-if="trashItems.length > 0">
+                <button class="btn danger-btn" @click="handleEmptyTrash">清空回收站 ({{ trashItems.length }})</button>
             </view>
         </view>
     </view>
@@ -637,14 +682,14 @@ const addItems = async () => {
 const confirmDelete = (id) => {
     uni.showModal({
         title: '确认',
-        content: '确定要删除这张照片吗？',
+        content: '将移到回收站，可随时恢复。',
         success: async (res) => {
             if (res.confirm) {
                 if (!isAdmin.value) return;
                 try {
                     await api.deleteItem(adminKey.value, id);
                     items.value = items.value.filter(item => item.id !== id);
-                    uni.showToast({ title: '删除成功', icon: 'none' });
+                    uni.showToast({ title: '已移到回收站', icon: 'none' });
                 } catch (error) {
                     if (error.message === 'AUTH_FAILED') {
                         uni.showToast({ title: '密钥失效', icon: 'none' });
@@ -653,6 +698,70 @@ const confirmDelete = (id) => {
                     } else {
                         uni.showToast({ title: '删除失败', icon: 'none' });
                     }
+                }
+            }
+        }
+    });
+};
+
+// ==================== 回收站 ====================
+
+const showTrashModal = ref(false);
+const trashItems = ref([]);
+
+const openTrash = async () => {
+    showTrashModal.value = true;
+    try {
+        const data = await api.fetchTrash(adminKey.value);
+        trashItems.value = Array.isArray(data) ? data : [];
+    } catch (e) {
+        uni.showToast({ title: '加载回收站失败', icon: 'none' });
+    }
+};
+
+const closeTrash = () => { showTrashModal.value = false; };
+
+const handleRestore = async (id) => {
+    try {
+        const restored = await api.restoreItem(adminKey.value, id);
+        trashItems.value = trashItems.value.filter(item => item.id !== id);
+        items.value.unshift(restored);
+        uni.showToast({ title: '已恢复', icon: 'success' });
+    } catch (e) {
+        uni.showToast({ title: '恢复失败', icon: 'none' });
+    }
+};
+
+const handlePermanentDelete = (id) => {
+    uni.showModal({
+        title: '⚠️ 彻底删除',
+        content: '文件将永久删除且不可恢复，确定吗？',
+        success: async (res) => {
+            if (res.confirm) {
+                try {
+                    await api.permanentDeleteItem(adminKey.value, id);
+                    trashItems.value = trashItems.value.filter(item => item.id !== id);
+                    uni.showToast({ title: '已彻底删除', icon: 'none' });
+                } catch (e) {
+                    uni.showToast({ title: '删除失败', icon: 'none' });
+                }
+            }
+        }
+    });
+};
+
+const handleEmptyTrash = () => {
+    uni.showModal({
+        title: '⚠️ 清空回收站',
+        content: `将彻底删除 ${trashItems.value.length} 个条目及其文件，不可恢复！`,
+        success: async (res) => {
+            if (res.confirm) {
+                try {
+                    const result = await api.emptyTrash(adminKey.value);
+                    trashItems.value = [];
+                    uni.showToast({ title: `已清空 ${result.deleted} 项`, icon: 'none' });
+                } catch (e) {
+                    uni.showToast({ title: '清空失败', icon: 'none' });
                 }
             }
         }
@@ -1595,5 +1704,107 @@ onMounted(() => {
     padding: 20px 24px;
     border-top: 1px solid var(--line);
     text-align: right;
+}
+
+/* ==================== 回收站 ==================== */
+
+.trash-modal {
+    max-height: 85vh;
+}
+
+.trash-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 0;
+}
+
+.trash-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.trash-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.02);
+    border-radius: 12px;
+    border: 1px solid var(--line);
+}
+
+.trash-thumb {
+    width: 50px;
+    height: 50px;
+    border-radius: 8px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.trash-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.trash-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.trash-date {
+    font-size: 0.7rem;
+    color: var(--muted);
+}
+
+.trash-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.trash-action-btn {
+    padding: 6px 12px;
+    border-radius: 99px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+.trash-action-btn.restore {
+    background: rgba(76, 175, 80, 0.1);
+    color: #4caf50;
+    border: 1px solid rgba(76, 175, 80, 0.2);
+}
+
+.trash-action-btn.restore:active {
+    background: rgba(76, 175, 80, 0.2);
+}
+
+.trash-action-btn.destroy {
+    background: rgba(244, 67, 54, 0.08);
+    color: #f44336;
+    border: 1px solid rgba(244, 67, 54, 0.15);
+}
+
+.trash-action-btn.destroy:active {
+    background: rgba(244, 67, 54, 0.2);
+}
+
+.danger-btn {
+    background: #f44336 !important;
+    color: #fff !important;
+    border: none;
+    box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
 }
 </style>
