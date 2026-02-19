@@ -149,6 +149,18 @@
         </view>
       </view>
 
+      <!-- 搜索框 -->
+      <view class="search-bar">
+        <input
+          class="search-input"
+          v-model="searchQuery"
+          placeholder="搜索标题、描述或地点..."
+          @confirm="onSearch"
+        />
+        <view class="search-clear" v-if="searchQuery" @click="clearSearch">✕</view>
+        <button class="search-btn" @click="onSearch">搜索</button>
+      </view>
+
       <scroll-view 
         class="timeline" 
         scroll-y="true" 
@@ -420,6 +432,9 @@ const descriptionValue = ref('');
 const items = ref([]);
 const batchList = ref([]);
 const adminKey = ref('');
+
+// 搜索状态
+const searchQuery = ref('');
 
 // 分页状态
 const page = ref(1);
@@ -1004,7 +1019,7 @@ const load = async (isRefresh = true) => {
     const limit = appConfig.pageSize && Number(appConfig.pageSize) > 0 ? Number(appConfig.pageSize) : 5;
 
     try {
-        const data = await api.fetchItems(adminKey.value, page.value, limit);
+        const data = await api.fetchItems(adminKey.value || uni.getStorageSync('peanut_api_key') || '', page.value, limit, searchQuery.value);
         // 后端分页返回 { items, total, page, limit }
         const newItems = data.items || data;
         if (Array.isArray(newItems)) {
@@ -1028,6 +1043,17 @@ const loadMore = () => {
     if (hasMore.value && !isLoading.value) {
         load(false);
     }
+};
+
+// 搜索操作
+const onSearch = () => {
+    load(true);
+};
+
+// 清除搜索
+const clearSearch = () => {
+    searchQuery.value = '';
+    load(true);
 };
 
 // ==================== 生命周期 ====================
@@ -1425,7 +1451,55 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
+  margin-bottom: 16px;
+}
+
+.search-bar {
+  display: flex;
+  align-items: center;
   margin-bottom: 24px;
+  position: relative;
+}
+
+.search-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--line);
+  padding: 10px 36px 10px 16px;
+  border-radius: 20px;
+  font-size: 0.95rem;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: var(--accent);
+}
+
+.search-clear {
+  position: absolute;
+  right: 80px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+  z-index: 2;
+  cursor: pointer;
+}
+
+.search-btn {
+  margin-left: 10px;
+  padding: 0 16px;
+  height: 40px;
+  line-height: 40px;
+  border-radius: 20px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.95rem;
+  border: none;
 }
 
 .timeline {
