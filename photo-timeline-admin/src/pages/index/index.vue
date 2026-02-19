@@ -143,6 +143,7 @@
       <view class="timeline-header">
         <text class="h2">{{ appConfig.timelineTitle }}</text>
         <view class="nav">
+          <button class="btn icon" @click="generateMissingThumbs" v-if="isAdmin" title="补生成视频封面">🎬</button>
           <button class="btn icon" @click="openSettings" v-if="isAdmin">⚙️</button>
         </view>
       </view>
@@ -656,6 +657,72 @@ const confirmDelete = (id) => {
             }
         }
     });
+};
+
+// ==================== 补生成视频封面 ====================
+
+const captureFrameFromUrl = (videoUrl) => {
+    // #ifdef H5
+    return new Promise((resolve) => {
+        const video = document.createElement('video');
+        video.crossOrigin = 'anonymous';
+        video.preload = 'auto';
+        video.muted = true;
+        video.playsInline = true;
+        video.src = videoUrl;
+        let resolved = false;
+        const done = (r) => { if (!resolved) { resolved = true; resolve(r); } };
+        video.onloadeddata = () => { video.currentTime = Math.min(1, video.duration * 0.1); };
+        video.onseeked = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.min(video.videoWidth, 800);
+                canvas.height = Math.round(canvas.width * video.videoHeight / video.videoWidth);
+                canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+                canvas.toBlob((blob) => {
+                    done(blob ? new File([blob], 'thumb.jpg', { type: 'image/jpeg' }) : null);
+                }, 'image/jpeg', 0.7);
+            } catch (e) { done(null); }
+        };
+        video.onerror = () => done(null);
+        setTimeout(() => done(null), 15000);
+    });
+    // #endif
+    // #ifndef H5
+    return Promise.resolve(null);
+    // #endif
+};
+
+const generateMissingThumbs = async () => {
+    const videoItems = items.value.filter(item => isVideo(item.src) && !item.thumb);
+    if (videoItems.length === 0) {
+        uni.showToast({ title: '所有视频都有封面', icon: 'none' });
+        return;
+    }
+
+    uni.showLoading({ title: `处理中 0/${videoItems.length}` });
+    let success = 0;
+
+    for (let i = 0; i < videoItems.length; i++) {
+        uni.showLoading({ title: `截帧 ${i + 1}/${videoItems.length}` });
+        const item = videoItems[i];
+        try {
+            const frameFile = await captureFrameFromUrl(item.src);
+            if (frameFile) {
+                const thumbData = await api.uploadFile(adminKey.value, URL.createObjectURL(frameFile), frameFile);
+                await api.updateItem(adminKey.value, item.id, { thumb: thumbData.url });
+                // 更新本地列表
+                const idx = items.value.findIndex(it => String(it.id) === String(item.id));
+                if (idx >= 0) items.value[idx].thumb = thumbData.url;
+                success++;
+            }
+        } catch (e) {
+            console.warn('视频截帧失败:', item.id, e);
+        }
+    }
+
+    uni.hideLoading();
+    uni.showToast({ title: `已生成 ${success}/${videoItems.length} 个封面`, icon: 'none' });
 };
 
 // ==================== 编辑条目 ====================
