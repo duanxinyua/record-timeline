@@ -207,40 +207,73 @@ function buildUploadUrl($filename) {
 }
 
 /**
- * 逆地理编码：坐标转地址（高德地图 API）
+ * HTTP GET 请求
  */
-function resolveAddress($lat, $lng) {
-    global $config;
-    $key = $config['amap_key'] ?? '';
-    if (empty($key) || !$lat || !$lng) return null;
-
-    $url = "https://restapi.amap.com/v3/geocode/regeo?" . http_build_query([
-        'key' => $key,
-        'location' => round($lng, 6) . ',' . round($lat, 6),
-        'extensions' => 'base'
-    ]);
-
-    $response = null;
+function httpGet($url, $headers = []) {
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
-        curl_setopt_array($ch, [
+        $opts = [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => 5,
             CURLOPT_SSL_VERIFYPEER => false
-        ]);
+        ];
+        if ($headers) {
+            $opts[CURLOPT_HTTPHEADER] = $headers;
+        }
+        curl_setopt_array($ch, $opts);
         $response = curl_exec($ch);
         curl_close($ch);
+        return $response ?: null;
     } elseif (ini_get('allow_url_fopen')) {
-        $ctx = stream_context_create(['http' => ['timeout' => 5]]);
-        $response = @file_get_contents($url, false, $ctx);
+        $opts = ['http' => ['timeout' => 5]];
+        if ($headers) {
+            $opts['http']['header'] = implode("\r\n", $headers);
+        }
+        return @file_get_contents($url, false, stream_context_create($opts)) ?: null;
+    }
+    return null;
+}
+
+/**
+ * 逆地理编码：坐标转地址
+ * 优先高德地图（需 amap_key），兜底 Nominatim（免费无需 Key）
+ */
+function resolveAddress($lat, $lng) {
+    global $config;
+    if (!$lat || !$lng) return null;
+
+    // 方案1：高德地图（需配置 amap_key）
+    $key = $config['amap_key'] ?? '';
+    if (!empty($key)) {
+        $url = "https://restapi.amap.com/v3/geocode/regeo?" . http_build_query([
+            'key' => $key,
+            'location' => round($lng, 6) . ',' . round($lat, 6),
+            'extensions' => 'base'
+        ]);
+        $response = httpGet($url);
+        if ($response) {
+            $data = json_decode($response, true);
+            if ($data && isset($data['status']) && $data['status'] === '1'
+                && !empty($data['regeocode']['formatted_address'])) {
+                return $data['regeocode']['formatted_address'];
+            }
+        }
     }
 
-    if (!$response) return null;
-
-    $data = json_decode($response, true);
-    if ($data && isset($data['status']) && $data['status'] === '1'
-        && !empty($data['regeocode']['formatted_address'])) {
-        return $data['regeocode']['formatted_address'];
+    // 方案2：Nominatim / OpenStreetMap（免费，无需 Key）
+    $url = "https://nominatim.openstreetmap.org/reverse?" . http_build_query([
+        'lat' => round($lat, 6),
+        'lon' => round($lng, 6),
+        'format' => 'json',
+        'accept-language' => 'zh',
+        'zoom' => 16
+    ]);
+    $response = httpGet($url, ['User-Agent: PeanutTimeline/1.0']);
+    if ($response) {
+        $data = json_decode($response, true);
+        if (!empty($data['display_name'])) {
+            return $data['display_name'];
+        }
     }
 
     return null;
@@ -416,6 +449,21 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'GET') {
 
         $items = $stmt->fetchAll();
 
+        // 自动补全缺失地址（每次最多解析 2 条，避免超时）
+        $resolved = 0;
+        foreach ($items as &$item) {
+            if ($resolved >= 2) break;
+            if (!empty($item['latitude']) && !empty($item['longitude']) && empty($item['address'])) {
+                $address = resolveAddress($item['latitude'], $item['longitude']);
+                if ($address) {
+                    $item['address'] = $address;
+                    $pdo->prepare("UPDATE timelineitem SET address = ? WHERE id = ?")->execute([$address, $item['id']]);
+                    $resolved++;
+                }
+            }
+        }
+        unset($item);
+
         // 返回总数以支持前端判断分页，同时保持主体为数组兼容旧版前端
         $countStmt = $pdo->query("SELECT COUNT(*) FROM timelineitem");
         $total = (int)$countStmt->fetchColumn();
@@ -428,7 +476,24 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'GET') {
     } else {
         // 无分页时也统一使用 DESC 排序
         $stmt = $pdo->query("SELECT * FROM timelineitem ORDER BY date DESC");
-        echo json_encode($stmt->fetchAll());
+        $items = $stmt->fetchAll();
+
+        // 自动补全缺失地址
+        $resolved = 0;
+        foreach ($items as &$item) {
+            if ($resolved >= 2) break;
+            if (!empty($item['latitude']) && !empty($item['longitude']) && empty($item['address'])) {
+                $address = resolveAddress($item['latitude'], $item['longitude']);
+                if ($address) {
+                    $item['address'] = $address;
+                    $pdo->prepare("UPDATE timelineitem SET address = ? WHERE id = ?")->execute([$address, $item['id']]);
+                    $resolved++;
+                }
+            }
+        }
+        unset($item);
+
+        echo json_encode($items);
     }
     exit();
 }
