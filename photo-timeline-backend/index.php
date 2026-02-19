@@ -444,6 +444,7 @@ if ($uri === '/upload' && $method === 'POST') {
 
 // GET /items/
 if (($uri === '/items/' || $uri === '/items') && $method === 'GET') {
+    verifyKey();
     $page = isset($_GET['page']) ? (int)$_GET['page'] : 0;
     $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 0;
 
@@ -686,6 +687,7 @@ if (($uri === '/clear-addresses' || $uri === '/clear-addresses/') && $method ===
 
 // GET /config
 if (($uri === '/config' || $uri === '/config/') && $method === 'GET') {
+    verifyKey();
     $stmt = $pdo->query("SELECT * FROM appconfig LIMIT 1");
     $config_data = $stmt->fetch();
     echo json_encode($config_data ?: []);

@@ -9,9 +9,18 @@
           <text>{{ appConfig.subTitle }}</text>
         </view>
       </view>
+
+      <!-- 未登录状态 -->
+      <view class="login-card" v-if="!isAuthed">
+          <view class="login-placeholder">
+              <text style="font-size: 3rem; margin-bottom: 16px;">🔐</text>
+              <text class="login-hint">请输入密钥查看时间轴</text>
+              <button class="btn primary" @click="requestKey">输入密钥</button>
+          </view>
+      </view>
     </view>
 
-    <view class="timeline-shell">
+    <view class="timeline-shell" v-if="isAuthed">
       <view class="timeline-header">
         <text class="h2">{{ appConfig.timelineTitle }}</text>
       </view>
@@ -133,6 +142,10 @@ const appConfig = reactive({
     takenAtLabel: "拍摄:"
 });
 
+// 密钥状态
+const viewerKey = ref(uni.getStorageSync('peanut_viewer_key') || '');
+const isAuthed = ref(false);
+
 // 数据状态
 const items = ref([]);
 const page = ref(1);
@@ -164,7 +177,7 @@ const allImageUrls = computed(() => {
 // 加载配置
 const loadConfig = async () => {
     try {
-        const data = await api.fetchConfig();
+        const data = await api.fetchConfig(viewerKey.value);
         Object.assign(appConfig, data);
         if (appConfig.pageSize) {
             appConfig.pageSize = Number(appConfig.pageSize);
@@ -191,7 +204,7 @@ const load = async (isRefresh = true) => {
     const limit = appConfig.pageSize && Number(appConfig.pageSize) > 0 ? Number(appConfig.pageSize) : 5;
 
     try {
-        const data = await api.fetchItems(page.value, limit);
+        const data = await api.fetchItems(viewerKey.value, page.value, limit);
         // 后端分页返回 { items, total, page, limit }
         const newItems = data.items || data;
         if (Array.isArray(newItems)) {
@@ -215,11 +228,43 @@ const loadMore = () => {
     }
 };
 
+// 输入密钥
+const requestKey = () => {
+    uni.showModal({
+        title: '输入密钥',
+        editable: true,
+        placeholderText: '请输入访问密钥',
+        success: async (res) => {
+            if (res.confirm && res.content) {
+                try {
+                    await api.verifyKey(res.content);
+                    viewerKey.value = res.content;
+                    uni.setStorageSync('peanut_viewer_key', res.content);
+                    isAuthed.value = true;
+                    loadConfig();
+                    load();
+                } catch (e) {
+                    uni.showToast({ title: '密钥错误', icon: 'none' });
+                }
+            }
+        }
+    });
+};
+
 // 生命周期
-onMounted(() => {
+onMounted(async () => {
     uni.setNavigationBarTitle({ title: appConfig.appTitle });
-    loadConfig();
-    load();
+    if (viewerKey.value) {
+        try {
+            await api.verifyKey(viewerKey.value);
+            isAuthed.value = true;
+            loadConfig();
+            load();
+        } catch (e) {
+            viewerKey.value = '';
+            uni.removeStorageSync('peanut_viewer_key');
+        }
+    }
 });
 </script>
 
@@ -494,5 +539,28 @@ onMounted(() => {
     color: #aaa;
     letter-spacing: 1px;
     font-weight: 500;
+}
+
+.login-card {
+    margin-top: 32px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 20px;
+    border: 1px dashed rgba(255,255,255,0.15);
+    backdrop-filter: blur(12px);
+}
+
+.login-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 0;
+}
+
+.login-hint {
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.6);
+    text-align: center;
+    margin-bottom: 24px;
 }
 </style>
