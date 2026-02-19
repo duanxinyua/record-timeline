@@ -449,7 +449,7 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'GET') {
 
     if ($page > 0 && $limit > 0) {
         $offset = ($page - 1) * $limit;
-        $stmt = $pdo->prepare("SELECT * FROM timelineitem ORDER BY date DESC LIMIT :limit OFFSET :offset");
+        $stmt = $pdo->prepare("SELECT * FROM timelineitem WHERE deleted_at IS NULL ORDER BY date DESC LIMIT :limit OFFSET :offset");
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
@@ -472,7 +472,7 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'GET') {
         unset($item);
 
         // 返回总数以支持前端判断分页，同时保持主体为数组兼容旧版前端
-        $countStmt = $pdo->query("SELECT COUNT(*) FROM timelineitem");
+        $countStmt = $pdo->query("SELECT COUNT(*) FROM timelineitem WHERE deleted_at IS NULL");
         $total = (int)$countStmt->fetchColumn();
 
         header('X-Total-Count: ' . $total);
@@ -482,7 +482,7 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'GET') {
         echo json_encode($items);
     } else {
         // 无分页时也统一使用 DESC 排序
-        $stmt = $pdo->query("SELECT * FROM timelineitem ORDER BY date DESC");
+        $stmt = $pdo->query("SELECT * FROM timelineitem WHERE deleted_at IS NULL ORDER BY date DESC");
         $items = $stmt->fetchAll();
 
         // 自动补全缺失地址
@@ -581,12 +581,54 @@ if (preg_match('#^/items/(\d+)$#', $uri, $matches) && $method === 'PUT') {
     exit();
 }
 
-// DELETE /items/{id}
+// DELETE /items/{id} — 软删除（标记 deleted_at）
 if (preg_match('#^/items/(\d+)$#', $uri, $matches) && $method === 'DELETE') {
     verifyKey();
     $id = $matches[1];
 
-    // 先查询文件路径，以便删除文件
+    $queryStmt = $pdo->prepare("SELECT id FROM timelineitem WHERE id = ? AND deleted_at IS NULL");
+    $queryStmt->execute([$id]);
+    if (!$queryStmt->fetch()) {
+        http_response_code(404);
+        echo json_encode(["detail" => "条目不存在"]);
+        exit();
+    }
+
+    // 软删除：打时间标记
+    $stmt = $pdo->prepare("UPDATE timelineitem SET deleted_at = ? WHERE id = ?");
+    $stmt->execute([date('c'), $id]);
+
+    echo json_encode(["ok" => true]);
+    exit();
+}
+
+// POST /items/{id}/restore — 恢复软删除的条目
+if (preg_match('#^/items/(\d+)/restore$#', $uri, $matches) && $method === 'POST') {
+    verifyKey();
+    $id = $matches[1];
+
+    $queryStmt = $pdo->prepare("SELECT id FROM timelineitem WHERE id = ? AND deleted_at IS NOT NULL");
+    $queryStmt->execute([$id]);
+    if (!$queryStmt->fetch()) {
+        http_response_code(404);
+        echo json_encode(["detail" => "条目不在回收站中"]);
+        exit();
+    }
+
+    $stmt = $pdo->prepare("UPDATE timelineitem SET deleted_at = NULL WHERE id = ?");
+    $stmt->execute([$id]);
+
+    $stmt = $pdo->prepare("SELECT * FROM timelineitem WHERE id = ?");
+    $stmt->execute([$id]);
+    echo json_encode($stmt->fetch());
+    exit();
+}
+
+// DELETE /items/{id}/permanent — 彻底删除（不可恢复）
+if (preg_match('#^/items/(\d+)/permanent$#', $uri, $matches) && $method === 'DELETE') {
+    verifyKey();
+    $id = $matches[1];
+
     $queryStmt = $pdo->prepare("SELECT src, thumb FROM timelineitem WHERE id = ?");
     $queryStmt->execute([$id]);
     $item = $queryStmt->fetch();
@@ -597,11 +639,9 @@ if (preg_match('#^/items/(\d+)$#', $uri, $matches) && $method === 'DELETE') {
         exit();
     }
 
-    // 删除数据库记录
     $deleteStmt = $pdo->prepare("DELETE FROM timelineitem WHERE id = ?");
     $deleteStmt->execute([$id]);
 
-    // 删除关联的文件（原图和缩略图）
     deleteUploadedFile($item['src']);
     deleteUploadedFile($item['thumb']);
 
@@ -609,10 +649,36 @@ if (preg_match('#^/items/(\d+)$#', $uri, $matches) && $method === 'DELETE') {
     exit();
 }
 
+// GET /trash — 回收站列表
+if (($uri === '/trash' || $uri === '/trash/') && $method === 'GET') {
+    verifyKey();
+    $stmt = $pdo->query("SELECT * FROM timelineitem WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC");
+    echo json_encode($stmt->fetchAll());
+    exit();
+}
+
+// POST /empty-trash — 清空回收站（彻底删除所有已软删条目及文件）
+if (($uri === '/empty-trash' || $uri === '/empty-trash/') && $method === 'POST') {
+    verifyKey();
+    $stmt = $pdo->query("SELECT src, thumb FROM timelineitem WHERE deleted_at IS NOT NULL");
+    $trashItems = $stmt->fetchAll();
+
+    foreach ($trashItems as $item) {
+        deleteUploadedFile($item['src']);
+        deleteUploadedFile($item['thumb']);
+    }
+
+    $pdo->exec("DELETE FROM timelineitem WHERE deleted_at IS NOT NULL");
+    $count = $pdo->query("SELECT changes()")->fetchColumn();
+
+    echo json_encode(["ok" => true, "deleted" => (int)$count]);
+    exit();
+}
+
 // POST /clear-addresses — 清除所有已缓存地址，强制重新解析
 if (($uri === '/clear-addresses' || $uri === '/clear-addresses/') && $method === 'POST') {
     verifyKey();
-    $stmt = $pdo->exec("UPDATE timelineitem SET address = NULL WHERE address IS NOT NULL");
+    $stmt = $pdo->exec("UPDATE timelineitem SET address = NULL WHERE address IS NOT NULL AND deleted_at IS NULL");
     $count = $pdo->query("SELECT changes()")->fetchColumn();
     echo json_encode(["ok" => true, "cleared" => (int)$count]);
     exit();

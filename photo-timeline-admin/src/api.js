@@ -149,7 +149,7 @@ export const updateItem = (apiKey, id, itemData) => {
 };
 
 /**
- * 删除时间轴条目
+ * 删除时间轴条目（软删除，可从回收站恢复）
  */
 export const deleteItem = (apiKey, id) => {
     return new Promise((resolve, reject) => {
@@ -166,6 +166,94 @@ export const deleteItem = (apiKey, id) => {
                     reject(new Error('条目不存在'));
                 } else {
                     reject(new Error('删除失败'));
+                }
+            },
+            fail: (e) => reject(e)
+        });
+    });
+};
+
+/**
+ * 恢复已软删除的条目
+ */
+export const restoreItem = (apiKey, id) => {
+    return new Promise((resolve, reject) => {
+        uni.request({
+            url: `${API_BASE}/items/${id}/restore`,
+            method: 'POST',
+            header: { 'x-api-key': apiKey },
+            success: (res) => {
+                if (res.statusCode === 200) {
+                    resolve(res.data);
+                } else if (res.statusCode === 404) {
+                    reject(new Error('条目不在回收站中'));
+                } else {
+                    reject(new Error('恢复失败'));
+                }
+            },
+            fail: (e) => reject(e)
+        });
+    });
+};
+
+/**
+ * 彻底删除条目（不可恢复，连同文件一起删除）
+ */
+export const permanentDeleteItem = (apiKey, id) => {
+    return new Promise((resolve, reject) => {
+        uni.request({
+            url: `${API_BASE}/items/${id}/permanent`,
+            method: 'DELETE',
+            header: { 'x-api-key': apiKey },
+            success: (res) => {
+                if (res.statusCode === 200) {
+                    resolve(res.data);
+                } else if (res.statusCode === 404) {
+                    reject(new Error('条目不存在'));
+                } else {
+                    reject(new Error('删除失败'));
+                }
+            },
+            fail: (e) => reject(e)
+        });
+    });
+};
+
+/**
+ * 获取回收站列表
+ */
+export const fetchTrash = (apiKey) => {
+    return new Promise((resolve, reject) => {
+        uni.request({
+            url: `${API_BASE}/trash`,
+            method: 'GET',
+            header: { 'x-api-key': apiKey },
+            success: (res) => {
+                if (res.statusCode === 200) {
+                    resolve(res.data);
+                } else {
+                    reject(new Error('加载失败'));
+                }
+            },
+            fail: (e) => reject(e)
+        });
+    });
+};
+
+/**
+ * 清空回收站（彻底删除所有已软删条目及文件）
+ */
+export const emptyTrash = (apiKey) => {
+    return new Promise((resolve, reject) => {
+        uni.request({
+            url: `${API_BASE}/empty-trash`,
+            method: 'POST',
+            header: { 'x-api-key': apiKey },
+            success: (res) => {
+                if (res.statusCode === 200) {
+                    resolve(res.data);
+                } else {
+                    reject(new Error('清空失败'));
                 }
             },
             fail: (e) => reject(e)
