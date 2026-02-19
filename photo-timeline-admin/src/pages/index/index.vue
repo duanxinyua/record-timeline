@@ -36,62 +36,77 @@
           />
         </view>
         <view class="field">
-          <text class="label-text">照片</text>
-          <view class="upload-area">
-             <template v-if="batchList.length > 0">
-                <scroll-view scroll-x="true" class="preview-scroll">
-                    <view class="preview-list">
-                        <view class="preview-item" v-for="(item, index) in batchList" :key="index">
-                             <video 
-                                v-if="isVideo(item.src)"
-                                :src="item.src" 
-                                class="preview-media"
-                                :controls="false"
-                                :show-center-play-btn="false" 
-                            ></video>
-                            <image 
-                                v-else
-                                :src="item.thumb || item.src" 
-                                mode="aspectFill" 
-                                class="preview-media" 
-                                @click.stop="previewImage(item.src)"
-                            ></image>
-                        </view>
-                    </view>
-                </scroll-view>
-                <view class="re-upload-tip" @click.stop="clearSelection">✕ 清除 {{ batchList.length }} 项</view>
-             </template>
-             
-             <!-- 上传触发按钮 -->
-             <view class="upload-controls" :style="{ marginTop: batchList.length > 0 ? '16px' : '0' }">
-                <!-- #ifdef H5 -->
-                <view class="h5-triggers">
-                    <view class="trigger-btn" @click="triggerH5Input('camera', 'image')">
-                        <text class="trigger-icon">📷</text>
-                        <text>拍照片</text>
-                    </view>
-                    <view class="trigger-btn" @click="triggerH5Input('camera', 'video')">
-                        <text class="trigger-icon">📹</text>
-                        <text>拍视频</text>
-                    </view>
-                    <view class="trigger-btn" @click="triggerH5Input('album', 'image')">
-                        <text class="trigger-icon">🖼️</text>
-                        <text>传照片</text>
-                    </view>
-                    <view class="trigger-btn" @click="triggerH5Input('album', 'video')">
-                        <text class="trigger-icon">🎞️</text>
-                        <text>传视频</text>
-                    </view>
+          <view class="field-header">
+            <text class="label-text">照片/视频</text>
+            <text class="clear-all-btn" v-if="batchList.length > 0" @click="clearSelection">清除全部({{ batchList.length }})</text>
+          </view>
+          <view class="upload-area" :class="{ 'has-items': batchList.length > 0 }">
+            <!-- 已上传文件预览网格 -->
+            <view class="preview-grid" v-if="batchList.length > 0">
+              <view class="preview-item" v-for="(item, index) in batchList" :key="index">
+                <video
+                  v-if="isVideo(item.src)"
+                  :src="item.src"
+                  class="preview-media"
+                  :controls="false"
+                  :show-center-play-btn="false"
+                ></video>
+                <image
+                  v-else
+                  :src="item.thumb || item.src"
+                  mode="aspectFill"
+                  class="preview-media"
+                  @click.stop="previewImage(item.src)"
+                ></image>
+                <view class="preview-remove" @click.stop="removeFromBatch(index)">✕</view>
+                <view class="video-badge" v-if="isVideo(item.src)">
+                  <text class="video-badge-text">VIDEO</text>
                 </view>
-                <!-- #endif -->
-                
-                <!-- #ifndef H5 -->
-                <view class="upload-placeholder" @click="chooseMedia" :class="{ 'compact': batchList.length > 0 }">
-                   <text class="upload-icon">📷/📹</text>
-                   <text>{{ batchList.length > 0 ? '继续添加' : '点击拍摄或选择' }}</text>
+              </view>
+              <!-- 添加更多 -->
+              <!-- #ifdef H5 -->
+              <view class="preview-item add-more-card" @click="showAddMenu">
+                <text class="add-icon">+</text>
+                <text class="add-text">添加</text>
+              </view>
+              <!-- #endif -->
+              <!-- #ifndef H5 -->
+              <view class="preview-item add-more-card" @click="chooseMedia">
+                <text class="add-icon">+</text>
+                <text class="add-text">添加</text>
+              </view>
+              <!-- #endif -->
+            </view>
+
+            <!-- 空状态：初始上传触发 -->
+            <template v-else>
+              <!-- #ifdef H5 -->
+              <view class="h5-triggers">
+                <view class="trigger-btn" @click="triggerH5Input('camera', 'image')">
+                  <text class="trigger-icon">📷</text>
+                  <text>拍照片</text>
                 </view>
-                <!-- #endif -->
-             </view>
+                <view class="trigger-btn" @click="triggerH5Input('camera', 'video')">
+                  <text class="trigger-icon">📹</text>
+                  <text>拍视频</text>
+                </view>
+                <view class="trigger-btn" @click="triggerH5Input('album', 'image')">
+                  <text class="trigger-icon">🖼️</text>
+                  <text>传照片</text>
+                </view>
+                <view class="trigger-btn" @click="triggerH5Input('album', 'video')">
+                  <text class="trigger-icon">🎞️</text>
+                  <text>传视频</text>
+                </view>
+              </view>
+              <!-- #endif -->
+              <!-- #ifndef H5 -->
+              <view class="upload-placeholder" @click="chooseMedia">
+                <text class="upload-icon">📷/📹</text>
+                <text>点击拍摄或选择</text>
+              </view>
+              <!-- #endif -->
+            </template>
           </view>
         </view>
         <view class="actions">
@@ -318,6 +333,25 @@ const clearSelection = () => {
     batchList.value = [];
 };
 
+const removeFromBatch = (index) => {
+    batchList.value.splice(index, 1);
+};
+
+const showAddMenu = () => {
+    uni.showActionSheet({
+        itemList: ['拍照片', '拍视频', '传照片', '传视频'],
+        success: (res) => {
+            const actions = [
+                () => triggerH5Input('camera', 'image'),
+                () => triggerH5Input('camera', 'video'),
+                () => triggerH5Input('album', 'image'),
+                () => triggerH5Input('album', 'video'),
+            ];
+            actions[res.tapIndex]();
+        }
+    });
+};
+
 const uploadOneFile = async (item) => {
     const filePath = typeof item === 'string' ? item : (item.path || item.src);
     const fileObj = typeof item === 'string' ? null : item.file;
@@ -340,7 +374,6 @@ const handleBatchUpload = async (filePaths) => {
     if (!filePaths || filePaths.length === 0) return;
 
     uni.showLoading({ title: `正在上传 0/${filePaths.length}` });
-    batchList.value = [];
 
     try {
         for (let i = 0; i < filePaths.length; i++) {
@@ -745,7 +778,7 @@ onMounted(() => {
 
 .upload-area {
   width: 100%;
-  height: 180px;
+  min-height: 160px;
   background: rgba(255, 255, 255, 0.5);
   border: 2px dashed var(--line);
   border-radius: 20px;
@@ -757,9 +790,101 @@ onMounted(() => {
   transition: all 0.3s ease;
 }
 
+.upload-area.has-items {
+  min-height: auto;
+  padding: 12px;
+  align-items: flex-start;
+  border-style: solid;
+  background: rgba(255, 255, 255, 0.3);
+}
+
 .upload-area:hover {
   background: rgba(255, 255, 255, 0.8);
   border-color: var(--accent);
+}
+
+/* 预览网格 */
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+
+.preview-item {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+.preview-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.preview-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  z-index: 3;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.video-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+.video-badge-text {
+  font-size: 10px;
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.add-more-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 2px dashed var(--line);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.add-more-card:active {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: var(--accent);
+}
+
+.add-icon {
+  font-size: 2rem;
+  color: var(--muted);
+  line-height: 1;
+}
+
+.add-text {
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 
 .h5-triggers {
@@ -800,57 +925,8 @@ onMounted(() => {
   font-size: 0.9rem;
 }
 
-.upload-placeholder.compact {
-    padding: 20px 0;
-    min-height: 80px;
-}
-
 .upload-icon {
   font-size: 2rem;
-}
-
-.re-upload-tip {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(0, 0, 0, 0.5);
-  color: #fff;
-  font-size: 0.8rem;
-  padding: 6px;
-  text-align: center;
-  backdrop-filter: blur(4px);
-}
-
-.preview-scroll {
-  width: 100%;
-  height: 100%;
-  white-space: nowrap;
-}
-
-.preview-list {
-  display: flex;
-  height: 100%;
-  align-items: center;
-  padding: 0 10px;
-  gap: 10px;
-}
-
-.preview-item {
-  display: inline-block;
-  width: 120px;
-  height: 120px;
-  border-radius: 8px;
-  overflow: hidden;
-  position: relative;
-  flex-shrink: 0;
-  border: 1px solid var(--line);
-}
-
-.preview-media {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 /* ==================== 表单元素 ==================== */
@@ -860,6 +936,18 @@ onMounted(() => {
   flex-direction: column;
   gap: 8px;
   font-size: 0.95rem;
+}
+
+.field-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.clear-all-btn {
+  font-size: 0.8rem;
+  color: var(--accent);
+  cursor: pointer;
 }
 
 .label-text {
