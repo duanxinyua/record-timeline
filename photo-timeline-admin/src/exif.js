@@ -1,14 +1,46 @@
 /**
  * exif.js - 轻量级 JPEG EXIF 解析器
- * 仅提取拍摄时间 (DateTimeOriginal) 和 GPS 坐标
+ * 提取拍摄时间 (DateTimeOriginal) 和 GPS 坐标
+ * 如果 EXIF 解析失败，使用 File.lastModified 兜底
  */
 
 /**
- * 从 File/Blob 对象中读取 EXIF 信息
- * @param {File|Blob} file
+ * 从 File 对象提取元数据（EXIF 优先，File.lastModified 兜底）
+ * @param {File} file
  * @returns {Promise<{date?: string, latitude?: number, longitude?: number} | null>}
  */
-export async function readExif(file) {
+export async function extractMetadata(file) {
+    const exif = await readExif(file);
+
+    const result = {
+        date: exif?.date || null,
+        latitude: exif?.latitude ?? null,
+        longitude: exif?.longitude ?? null
+    };
+
+    // 日期兜底：使用 File.lastModified（对所有图片格式都有效）
+    if (!result.date && file && file.lastModified) {
+        const d = new Date(file.lastModified);
+        if (!isNaN(d.getTime())) {
+            result.date = [
+                d.getFullYear(),
+                String(d.getMonth() + 1).padStart(2, '0'),
+                String(d.getDate()).padStart(2, '0')
+            ].join(':') + ' ' + [
+                String(d.getHours()).padStart(2, '0'),
+                String(d.getMinutes()).padStart(2, '0'),
+                String(d.getSeconds()).padStart(2, '0')
+            ].join(':');
+        }
+    }
+
+    return (result.date || result.latitude != null) ? result : null;
+}
+
+/**
+ * 从 File/Blob 对象中读取 JPEG EXIF 信息
+ */
+async function readExif(file) {
     try {
         // 只读前 128KB，EXIF 数据一般在文件头部
         const slice = file.slice(0, 128 * 1024);

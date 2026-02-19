@@ -57,6 +57,12 @@
                   <view class="card-body">
                     <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
                     <text class="title">{{ item.title || appConfig.defaultItemTitle }}</text>
+                    <view class="meta-row" v-if="item.taken_at">
+                      <text class="meta-text">拍摄: {{ item.taken_at }}</text>
+                    </view>
+                    <view class="meta-row location" v-if="item.latitude && item.longitude" @click.stop="openMap(item.latitude, item.longitude)">
+                      <text class="meta-text">{{ formatCoord(item.latitude, item.longitude) }}</text>
+                    </view>
                   </view>
                 </view>
               </view>
@@ -88,6 +94,23 @@
 import { ref, onMounted, reactive } from 'vue';
 import { formatDate, isVideo, previewImage } from '../../utils.js';
 import * as api from '../../api.js';
+
+// 位置格式化
+const formatCoord = (lat, lng) => {
+    if (!lat || !lng) return '';
+    const latDir = lat >= 0 ? 'N' : 'S';
+    const lngDir = lng >= 0 ? 'E' : 'W';
+    return `${Math.abs(lat).toFixed(4)}°${latDir}, ${Math.abs(lng).toFixed(4)}°${lngDir}`;
+};
+
+const openMap = (lat, lng) => {
+    // #ifdef H5
+    window.open(`https://uri.amap.com/marker?position=${lng},${lat}`, '_blank');
+    // #endif
+    // #ifndef H5
+    uni.openLocation({ latitude: parseFloat(lat), longitude: parseFloat(lng) });
+    // #endif
+};
 
 // 配置状态
 const appConfig = reactive({
@@ -359,6 +382,23 @@ onMounted(() => {
   color: var(--ink);
   line-height: 1.4;
   margin-top: 4px;
+}
+
+.meta-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.meta-row.location {
+  cursor: pointer;
+}
+
+.meta-text {
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
 }
 
 /* 加载状态 */
