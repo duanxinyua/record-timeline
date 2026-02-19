@@ -10,10 +10,10 @@
         </view>
       </view>
 
+      <!-- 管理员上传区域 -->
       <view class="upload-card" v-if="isAdmin">
         <view class="field">
           <text class="label-text">时间</text>
-          <!-- Using a simple input for H5 compatibility or picker -->
           <view class="datetime-group">
             <picker mode="date" :value="dateValue" @change="bindDateChange">
               <view class="input-picker">
@@ -62,7 +62,7 @@
                 <view class="re-upload-tip" @click.stop="clearSelection">✕ 清除 {{ batchList.length }} 项</view>
              </template>
              
-             <!-- Upload Triggers (Always Visible) -->
+             <!-- 上传触发按钮 -->
              <view class="upload-controls" :style="{ marginTop: batchList.length > 0 ? '16px' : '0' }">
                 <!-- #ifdef H5 -->
                 <view class="h5-triggers">
@@ -103,6 +103,7 @@
         </view>
       </view>
 
+      <!-- 未登录状态 -->
       <view class="upload-card" v-else>
           <view class="upload-placeholder" style="padding: 40px 0;">
               <text style="font-size: 3rem; margin-bottom: 16px;">🔐</text>
@@ -112,6 +113,7 @@
       </view>
     </view>
 
+    <!-- 时间轴 -->
     <view class="timeline-shell">
       <view class="timeline-header">
         <text class="h2">{{ appConfig.timelineTitle }}</text>
@@ -120,22 +122,21 @@
         </view>
       </view>
 
-      <!-- Scroll View for Timeline -->
       <scroll-view 
         class="timeline" 
         scroll-y="true" 
         scroll-with-animation="true"
-        @scrolltolower="onReachBottom"
+        @scrolltolower="loadMore"
       >
         <view class="timeline-content">
             <view class="axis" aria-hidden="true"></view>
             <view class="timeline-track">
-              <view v-if="items.length === 0" class="empty">
+              <view v-if="items.length === 0 && !isLoading" class="empty">
                 <text>{{ appConfig.emptyText }}</text>
               </view>
               
               <view 
-                v-for="(item, index) in sortedItems" 
+                v-for="(item, index) in items" 
                 :key="item.id" 
                 class="timeline-item"
                 :style="{ '--i': index }"
@@ -148,8 +149,7 @@
                     :src="item.src" 
                     controls
                   ></video>
-                   <!-- Placeholder when video is hidden (optional, but good for layout stability) -->
-                   <view v-if="isVideo(item.src) && showSettingsModal" class="photo" style="background: #000; display: flex; align-items: center; justify-content: center;">
+                   <view v-else-if="isVideo(item.src) && showSettingsModal" class="photo video-placeholder">
                        <text style="color: #fff;">📹</text>
                    </view>
                   <image 
@@ -157,21 +157,22 @@
                     class="photo" 
                     :src="item.thumb || item.src" 
                     mode="aspectFill"
+                    lazy-load
                     @click="previewImage(item.src)"
                   ></image>
                   <view class="card-body">
-                    <text class="date">{{ formatDate(item.date) }}</text>
+                    <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
                     <text class="title">{{ item.title || appConfig.defaultItemTitle }}</text>
                   </view>
                   
-                  <view class="delete-btn-overlay" @click.stop="deleteItem(item.id)" v-if="isAdmin">
+                  <view class="delete-btn-overlay" @click.stop="confirmDelete(item.id)" v-if="isAdmin">
                       <text class="delete-icon">🗑️</text>
                   </view>
                 </view>
               </view>
             </view>
             
-            <!-- Loading More Indicator -->
+            <!-- 加载状态 -->
             <view class="loading-more" v-if="items.length > 0">
                 <template v-if="isLoading">
                     <text class="loading-text">加载中...</text>
@@ -191,7 +192,7 @@
       </scroll-view>
     </view>
 
-    <!-- Settings Modal -->
+    <!-- 设置弹窗 -->
     <view class="modal-overlay" v-if="showSettingsModal">
         <view class="modal-content">
             <view class="modal-header">
@@ -237,7 +238,7 @@
                 </view>
             </view>
             <view class="modal-footer">
-                <button class="btn primary" @click="saveSettings">保存配置</button>
+                <button class="btn primary" @click="handleSaveSettings">保存配置</button>
             </view>
         </view>
     </view>
@@ -246,12 +247,12 @@
 
 <script setup>
 import { ref, computed, onMounted, reactive } from 'vue';
+import { onLoad } from '@dcloudio/uni-app';
+import { formatDate, isVideo, previewImage } from '../../utils.js';
+import * as api from '../../api.js';
 
-import { onLoad, onReachBottom } from '@dcloudio/uni-app';
+// ==================== 状态 ====================
 
-const STORAGE_KEY = 'photoTimelineItems';
-
-// Config State
 const appConfig = reactive({
     appTitle: "花生",
     kicker: "Peanut",
@@ -267,185 +268,54 @@ const appConfig = reactive({
 const editConfig = reactive({...appConfig});
 const showSettingsModal = ref(false);
 
-// State
 const dateValue = ref('');
 const timeValue = ref('');
 const captionValue = ref('');
 const items = ref([]);
+const batchList = ref([]);
+const adminKey = ref('');
 
-const tempPhotoData = ref(null); 
-const batchList = ref([]); // Store batch uploaded items
-const adminKey = ref(''); // Store the API Key
-
-
-// Pagination State
-// Pagination State
+// 分页状态
 const page = ref(1);
 const hasMore = ref(true);
 const isLoading = ref(false);
 
-// Dynamic API Base URL
-const getApiBaseUrl = () => {
-    return 'https://api.hetao.us';
-};
+const isAdmin = computed(() => !!adminKey.value);
 
-const API_BASE = getApiBaseUrl();
+// ==================== 日期选择 ====================
 
-// Helpers
-const createId = () => 
-  `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const bindDateChange = (e) => { dateValue.value = e.detail.value; };
+const bindTimeChange = (e) => { timeValue.value = e.detail.value; };
 
-const formatDate = (value) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return appConfig.unknownDateText;
-  return date.toLocaleString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
-
-const isVideo = (url) => {
-    if (!url) return false;
-    // Remove query params and lowercase
-    const cleanUrl = url.split('?')[0];
-    const ext = cleanUrl.split('.').pop().toLowerCase();
-    return ['mp4', 'mov', 'webm', 'avi', 'm4v', 'kv'].includes(ext);
-};
-
-const previewImage = (url) => {
-    uni.previewImage({
-        urls: [url]
-    });
-};
+// ==================== 文件上传 ====================
 
 const clearSelection = () => {
-    tempPhotoData.value = null;
     batchList.value = [];
 };
 
-const isAdmin = computed(() => {
-    return !!adminKey.value;
-});
+const uploadOneFile = async (item) => {
+    const filePath = typeof item === 'string' ? item : (item.path || item.src);
+    const fileObj = typeof item === 'string' ? null : item.file;
 
-// Actions
-const bindDateChange = (e) => {
-  dateValue.value = e.detail.value;
-};
-
-const bindTimeChange = (e) => {
-  timeValue.value = e.detail.value;
-};
-
-
-
-// Remove getVideoThumbnail function
-
-const uploadOneFile = (item) => {
-    return new Promise(async (resolve, reject) => {
-        let filePath, fileObj, thumbPath, thumbFile;
-        
-        // Normalize input
-        if (typeof item === 'string') {
-            filePath = item;
-        } else {
-            filePath = item.path || item.src;
-            fileObj = item.file;
-            thumbPath = item.thumbPath; // For uniapp
-            thumbFile = item.thumbFile; // For H5 blob
+    try {
+        const data = await api.uploadFile(adminKey.value, filePath, fileObj);
+        return data;
+    } catch (error) {
+        if (error.message === 'AUTH_FAILED') {
+            uni.showToast({ title: '密钥失效', icon: 'none' });
+            adminKey.value = '';
+            uni.removeStorageSync('peanut_api_key');
         }
-
-        // 1. Upload the main file
-        let mainFileRes;
-        try {
-            mainFileRes = await new Promise((res, rej) => {
-                const uploadTask = uni.uploadFile({
-                    url: `${API_BASE}/upload`, 
-                    filePath: filePath, // For app/h5 blob url
-                    file: fileObj,      // For h5 file obj (optional if filePath is blob url)
-                    name: 'file',
-                    header: {
-                        'x-api-key': adminKey.value
-                    },
-                    formData: { 'user': 'test' },
-                    success: (uploadFileRes) => {
-                        if (uploadFileRes.statusCode === 403) {
-                            uni.showToast({ title: '密钥失效', icon: 'none' });
-                            adminKey.value = ''; 
-                            uni.removeStorageSync('peanut_api_key');
-                            rej('403');
-                            return;
-                        }
-                        try {
-                            const data = JSON.parse(uploadFileRes.data);
-                            if (data.error || data.detail) {
-                                rej(data.detail || data.error);
-                            } else {
-                                res(data);
-                            }
-                        } catch (e) {
-                            console.error(e);
-                            rej('解析失败');
-                        }
-                    },
-                    fail: (err) => {
-                        console.error("Main upload failed", err);
-                        rej('上传失败');
-                    }
-                });
-            });
-        } catch (error) {
-            reject(error);
-            return;
-        }
-
-        // 2. If there is a thumbnail, upload it
-        let thumbUrl = null;
-        if (thumbPath || thumbFile) {
-             try {
-                const thumbRes = await new Promise((res, rej) => {
-                    uni.uploadFile({
-                        url: `${API_BASE}/upload`, 
-                        filePath: thumbPath, 
-                        file: thumbFile,
-                        name: 'file',
-                        header: { 'x-api-key': adminKey.value },
-                        success: (uploadFileRes) => {
-                            if (uploadFileRes.statusCode === 200) {
-                                 const data = JSON.parse(uploadFileRes.data);
-                                 res(data.url);
-                            } else {
-                                res(null); // Ignore thumb upload failure
-                            }
-                        },
-                        fail: () => res(null)
-                    });
-                });
-                thumbUrl = thumbRes;
-             } catch (e) {
-                 console.warn("Thumbnail upload failed", e);
-             }
-        }
-        
-        // Return combined result
-        // If main file response has a thumb (e.g. valid image), use it. 
-        // If we uploaded a separate thumb (video cover), override/set it.
-        const result = { ...mainFileRes };
-        if (thumbUrl) {
-            result.thumb = thumbUrl;
-        }
-        resolve(result);
-    });
+        throw error;
+    }
 };
 
 const handleBatchUpload = async (filePaths) => {
     if (!filePaths || filePaths.length === 0) return;
-    
+
     uni.showLoading({ title: `正在上传 0/${filePaths.length}` });
     batchList.value = [];
-    
+
     try {
         for (let i = 0; i < filePaths.length; i++) {
             uni.showLoading({ title: `正在上传 ${i+1}/${filePaths.length}` });
@@ -457,55 +327,36 @@ const handleBatchUpload = async (filePaths) => {
                 exif: data.exif
             });
         }
-        
+
         if (batchList.value.length > 0) {
-            tempPhotoData.value = batchList.value[0];
             uni.showToast({ title: '上传完成', icon: 'success' });
         }
     } catch (e) {
-        uni.showToast({ title: e || '上传出错', icon: 'none' });
+        uni.showToast({ title: e.message || '上传出错', icon: 'none' });
     } finally {
         uni.hideLoading();
     }
 };
-
-
 
 const triggerH5Input = (sourceType, mediaType) => {
     // #ifdef H5
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    
-    // Set accept attribute
-    if (mediaType === 'video') {
-         input.accept = 'video/*';
-    } else {
-         input.accept = 'image/*';
-    }
-    
-    // Set capture attribute for camera
+    input.accept = mediaType === 'video' ? 'video/*' : 'image/*';
+
     if (sourceType === 'camera') {
         input.setAttribute('capture', 'environment');
     }
-    
+
     input.onchange = (event) => {
         const files = event.target.files;
         if (files && files.length > 0) {
-            if (mediaType === 'video') {
-                uni.showLoading({ title: '准备上传...' });
-            }
-            
             const items = Array.from(files).map(file => ({
                 file: file,
-                path: URL.createObjectURL(file), // Preview URL
+                path: URL.createObjectURL(file),
                 type: mediaType
             }));
-            
-            if (mediaType === 'video') {
-                uni.hideLoading();
-            }
-            
             handleBatchUpload(items);
         }
     };
@@ -513,174 +364,122 @@ const triggerH5Input = (sourceType, mediaType) => {
     // #endif
 };
 
-
-
-
-
-
-
 const chooseMedia = () => {
-  if (!isAdmin.value) return;
+    if (!isAdmin.value) return;
 
-  // #ifndef H5
-  uni.chooseMedia({
-    count: 9,
-    mediaType: ['image', 'video'],
-    sourceType: ['album', 'camera'],
-    success: async (res) => {
-      const urls = res.tempFiles.map(f => f.tempFilePath);
-      handleBatchUpload(urls);
-    }
-  });
-  // #endif
+    // #ifndef H5
+    uni.chooseMedia({
+        count: 9,
+        mediaType: ['image', 'video'],
+        sourceType: ['album', 'camera'],
+        success: (res) => {
+            const urls = res.tempFiles.map(f => f.tempFilePath);
+            handleBatchUpload(urls);
+        }
+    });
+    // #endif
 };
 
+// ==================== 条目管理 ====================
 
 const addItems = async () => {
-  if (!tempPhotoData.value) {
-    uni.showToast({ title: '请先选择照片', icon: 'none' });
-    return;
-  }
-  
-  if (!isAdmin.value) return;
-
-  // Combine Date and Time
-  let finalDateStr = '';
-  if (dateValue.value) {
-      finalDateStr = dateValue.value;
-      if (timeValue.value) {
-          finalDateStr += 'T' + timeValue.value;
-      } else {
-          finalDateStr += 'T00:00';
-      }
-  } else {
-      finalDateStr = new Date().toISOString();
-  }
-  
-  const baseDate = new Date(finalDateStr);
-  const itemsToSave = batchList.value.length > 0 ? batchList.value : [tempPhotoData.value];
-  
-  uni.showLoading({ title: '正在发布...' });
-
-  try {
-      for (let i = 0; i < itemsToSave.length; i++) {
-          const item = itemsToSave[i];
-          // Use EXIF date if available and not overridden by user manually
-          // Actually user usually sets one date for the batch?
-          // Let's use the baseDate, but maybe increment seconds to ensure order?
-          // Or if item has EXIF data, prefer that? 
-          // Implementation: Priority Exif > Selected Date.
-          // User asked: "first one has title, others empty".
-          
-          let itemDate = baseDate;
-          if (item.exif && item.exif.date) {
-               // Parse EXIF date "YYYY:MM:DD HH:MM:SS"
-               const parts = item.exif.date.split(/[: ]/);
-               if (parts.length >= 6) {
-                   itemDate = new Date(parts[0], parts[1]-1, parts[2], parts[3], parts[4], parts[5]);
-               }
-          }
-          // Fallback: add i seconds to ensure uniqueness/ordering if identical
-          if (!item.exif) {
-              itemDate = new Date(baseDate.getTime() + i * 1000);
-          }
-
-          const newItem = {
-            date: itemDate.toISOString(),
-            title: (i === 0) ? (captionValue.value || item.name.replace(/\.[^/.]+$/, "")) : '',
-            src: item.src,
-            thumb: item.thumb,
-            latitude: item.exif ? item.exif.latitude : null,
-            longitude: item.exif ? item.exif.longitude : null
-          };
-
-          await new Promise((resolve, reject) => {
-              uni.request({
-                url: `${API_BASE}/items/`,
-                method: 'POST',
-                header: { 'x-api-key': adminKey.value },
-                data: newItem,
-                success: (res) => {
-                    if (res.statusCode === 200) {
-                        items.value.unshift(res.data); // Add to top
-                        resolve(res.data);
-                    } else {
-                        reject('Failed');
-                    }
-                },
-                fail: reject
-            });
-          });
-      }
-      
-      uni.showToast({ title: '全部发布成功', icon: 'success' });
-      // Reset
-      captionValue.value = '';
-      tempPhotoData.value = null;
-      batchList.value = [];
-  } catch (e) {
-      uni.showToast({ title: '发布过程中出错', icon: 'none' });
-  } finally {
-      uni.hideLoading();
-  }
-};
-
-const deleteItem = (id) => {
-  uni.showModal({
-    title: '确认',
-    content: '确定要删除这张照片吗？',
-    success: (res) => {
-      if (res.confirm) {
-        if (!isAdmin.value) return;
-
-        uni.request({
-            url: `${API_BASE}/items/${id}`,
-            method: 'DELETE',
-            header: {
-                'x-api-key': adminKey.value
-            },
-            success: (delRes) => {
-                if (delRes.statusCode === 200) {
-                     if (Array.isArray(items.value)) {
-                        items.value = items.value.filter(item => item.id !== id);
-                     } else {
-                        // Fallback reload if state is inconsistent
-                        load();
-                     }
-                     uni.showToast({ title: '删除成功', icon: 'none' });
-                } else if (delRes.statusCode === 403) {
-                     uni.showToast({ title: '密钥失效', icon: 'none' });
-                     adminKey.value = '';
-                     uni.removeStorageSync('peanut_api_key');
-                }
-            }
-        });
-      }
+    if (batchList.value.length === 0) {
+        uni.showToast({ title: '请先选择照片', icon: 'none' });
+        return;
     }
-  });
+    if (!isAdmin.value) return;
+
+    // 构建日期
+    let finalDateStr = '';
+    if (dateValue.value) {
+        finalDateStr = dateValue.value + (timeValue.value ? 'T' + timeValue.value : 'T00:00');
+    } else {
+        finalDateStr = new Date().toISOString();
+    }
+
+    const baseDate = new Date(finalDateStr);
+    uni.showLoading({ title: '正在发布...' });
+
+    try {
+        for (let i = 0; i < batchList.value.length; i++) {
+            const item = batchList.value[i];
+
+            // 日期优先级：EXIF > 用户选择
+            let itemDate = baseDate;
+            if (item.exif && item.exif.date) {
+                const parts = item.exif.date.split(/[: ]/);
+                if (parts.length >= 6) {
+                    itemDate = new Date(parts[0], parts[1]-1, parts[2], parts[3], parts[4], parts[5]);
+                }
+            } else {
+                // 无 EXIF 时加秒确保排序
+                itemDate = new Date(baseDate.getTime() + i * 1000);
+            }
+
+            const newItem = {
+                date: itemDate.toISOString(),
+                title: (i === 0) ? (captionValue.value || item.name.replace(/\.[^/.]+$/, "")) : '',
+                src: item.src,
+                thumb: item.thumb,
+                latitude: item.exif ? item.exif.latitude : null,
+                longitude: item.exif ? item.exif.longitude : null
+            };
+
+            const savedItem = await api.createItem(adminKey.value, newItem);
+            items.value.unshift(savedItem);
+        }
+
+        uni.showToast({ title: '全部发布成功', icon: 'success' });
+        captionValue.value = '';
+        batchList.value = [];
+    } catch (e) {
+        uni.showToast({ title: '发布过程中出错', icon: 'none' });
+    } finally {
+        uni.hideLoading();
+    }
 };
 
-// Config Actions
-const fetchConfig = () => {
-    uni.request({
-        url: `${API_BASE}/config`,
-        method: 'GET',
-        success: (res) => {
-            if (res.statusCode === 200) {
-                Object.assign(appConfig, res.data);
-                if (appConfig.pageSize) {
-                    appConfig.pageSize = Number(appConfig.pageSize);
+const confirmDelete = (id) => {
+    uni.showModal({
+        title: '确认',
+        content: '确定要删除这张照片吗？',
+        success: async (res) => {
+            if (res.confirm) {
+                if (!isAdmin.value) return;
+                try {
+                    await api.deleteItem(adminKey.value, id);
+                    items.value = items.value.filter(item => item.id !== id);
+                    uni.showToast({ title: '删除成功', icon: 'none' });
+                } catch (error) {
+                    if (error.message === 'AUTH_FAILED') {
+                        uni.showToast({ title: '密钥失效', icon: 'none' });
+                        adminKey.value = '';
+                        uni.removeStorageSync('peanut_api_key');
+                    } else {
+                        uni.showToast({ title: '删除失败', icon: 'none' });
+                    }
                 }
-                uni.setNavigationBarTitle({
-                    title: appConfig.appTitle
-                });
             }
         }
     });
 };
 
+// ==================== 配置管理 ====================
+
+const loadConfig = async () => {
+    try {
+        const data = await api.fetchConfig();
+        Object.assign(appConfig, data);
+        if (appConfig.pageSize) {
+            appConfig.pageSize = Number(appConfig.pageSize);
+        }
+        uni.setNavigationBarTitle({ title: appConfig.appTitle });
+    } catch (e) {
+        console.error("获取配置失败", e);
+    }
+};
+
 const openSettings = () => {
-    /* console.log('Opening settings...'); */
     Object.assign(editConfig, appConfig);
     showSettingsModal.value = true;
 };
@@ -689,30 +488,23 @@ const closeSettings = () => {
     showSettingsModal.value = false;
 };
 
-const saveSettings = () => {
-    uni.request({
-        url: `${API_BASE}/config`,
-        method: 'POST',
-        header: {
-            'x-api-key': adminKey.value
-        },
-        data: editConfig,
-        success: (res) => {
-            if (res.statusCode === 200) {
-                Object.assign(appConfig, res.data);
-                showSettingsModal.value = false;
-                uni.showToast({ title: '配置已更新', icon: 'success' });
-                uni.setNavigationBarTitle({
-                    title: appConfig.appTitle
-                });
-            } else if (res.statusCode === 403) {
-                uni.showToast({ title: '无权限', icon: 'none' });
-            } else {
-                uni.showToast({ title: '保存失败', icon: 'none' });
-            }
+const handleSaveSettings = async () => {
+    try {
+        const data = await api.saveConfig(adminKey.value, editConfig);
+        Object.assign(appConfig, data);
+        showSettingsModal.value = false;
+        uni.showToast({ title: '配置已更新', icon: 'success' });
+        uni.setNavigationBarTitle({ title: appConfig.appTitle });
+    } catch (error) {
+        if (error.message === 'AUTH_FAILED') {
+            uni.showToast({ title: '无权限', icon: 'none' });
+        } else {
+            uni.showToast({ title: '保存失败', icon: 'none' });
         }
-    });
+    }
 };
+
+// ==================== 认证 ====================
 
 const requestLogin = () => {
     uni.showModal({
@@ -746,65 +538,55 @@ const logout = () => {
     });
 };
 
-// Removed save() as it is now handled by API calls
+// ==================== 数据加载 ====================
 
-const load = (isRefresh = true) => {
-  if (isLoading.value) return;
-  
-  if (isRefresh) {
-      page.value = 1;
-      hasMore.value = true;
-      items.value = [];
-  }
-  
-  if (!hasMore.value) return;
+const load = async (isRefresh = true) => {
+    if (isLoading.value) return;
 
-  isLoading.value = true;
-  const limit = appConfig.pageSize && Number(appConfig.pageSize) > 0 ? Number(appConfig.pageSize) : 5;
+    if (isRefresh) {
+        page.value = 1;
+        hasMore.value = true;
+        items.value = [];
+    }
 
-  uni.request({
-      url: `${API_BASE}/items/?page=${page.value}&limit=${limit}`,
-      method: 'GET',
-      success: (res) => {
-          if (res.statusCode === 200) {
-              const newItems = res.data;
-              if (newItems.length < limit) {
-                  hasMore.value = false;
-              }
-              items.value = [...items.value, ...newItems];
-              page.value++;
-          }
-      },
-      fail: (e) => {
-          console.error(e);
-          uni.showToast({ title: '加载失败', icon: 'none' });
-      },
-      complete: () => {
-          isLoading.value = false;
-          if (isRefresh) {
-              uni.stopPullDownRefresh();
-          }
-      }
-  });
+    if (!hasMore.value) return;
+    isLoading.value = true;
+
+    const limit = appConfig.pageSize && Number(appConfig.pageSize) > 0 ? Number(appConfig.pageSize) : 5;
+
+    try {
+        const data = await api.fetchItems(page.value, limit);
+        // 后端分页返回 { items, total, page, limit }
+        const newItems = data.items || data;
+        if (Array.isArray(newItems)) {
+            if (newItems.length < limit) {
+                hasMore.value = false;
+            }
+            items.value = [...items.value, ...newItems];
+            page.value++;
+        }
+    } catch (e) {
+        uni.showToast({ title: '加载失败', icon: 'none' });
+    } finally {
+        isLoading.value = false;
+        if (isRefresh) {
+            uni.stopPullDownRefresh();
+        }
+    }
 };
 
-onReachBottom(() => {
-    if (hasMore.value) {
+const loadMore = () => {
+    if (hasMore.value && !isLoading.value) {
         load(false);
     }
-});
+};
 
-// Computed
-const sortedItems = computed(() => {
-  return [...items.value].sort((a, b) => new Date(b.date) - new Date(a.date)); // NEWEST FIRST
-});
+// ==================== 生命周期 ====================
 
-// Lifecycle
 onLoad((options) => {
     let key = options && options.key ? options.key : '';
 
     // #ifdef H5
-    // Support ?key=... before the hash
     if (!key && window.location.search) {
         const params = new URLSearchParams(window.location.search);
         if (params.has('key')) {
@@ -813,13 +595,11 @@ onLoad((options) => {
     }
     // #endif
 
-    // Magic Link Auth
     if (key) {
         uni.setStorageSync('peanut_api_key', key);
         adminKey.value = key;
         uni.showToast({ title: '管理员模式已激活', icon: 'none' });
     } else {
-        // Try load existing key
         const stored = uni.getStorageSync('peanut_api_key');
         if (stored) {
             adminKey.value = stored;
@@ -828,27 +608,17 @@ onLoad((options) => {
 });
 
 onMounted(() => {
-  const now = new Date();
-  // Format YYYY-MM-DD
-  const y = now.getFullYear();
-  const m = String(now.getMonth()+1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  dateValue.value = `${y}-${m}-${d}`;
-  
-  // Format HH:MM
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
-  timeValue.value = `${hh}:${mm}`;
-  
-  fetchConfig();
-  load();
+    const now = new Date();
+    dateValue.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    timeValue.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    loadConfig();
+    load();
 });
-
-
 </script>
 
 <style>
-/* Page specific styles */
+/* ==================== 排版 ==================== */
 
 .h1 {
   font-size: clamp(2.4rem, 4vw, 3.4rem);
@@ -861,6 +631,8 @@ onMounted(() => {
   font-size: 1.6rem;
   font-weight: bold;
 }
+
+/* ==================== 主视觉区 ==================== */
 
 .hero {
   position: relative;
@@ -900,6 +672,8 @@ onMounted(() => {
   line-height: 1.6;
 }
 
+/* ==================== 上传卡片 ==================== */
+
 .upload-card {
   background: var(--card);
   backdrop-filter: blur(20px);
@@ -929,7 +703,6 @@ onMounted(() => {
   justify-content: center;
   overflow: hidden;
   position: relative;
-  /* Removed simple cursor pointer as clicks are inner */
   transition: all 0.3s ease;
 }
 
@@ -955,7 +728,7 @@ onMounted(() => {
     color: var(--muted);
     font-size: 0.85rem;
     transition: background 0.2s;
-    border: 1px solid rgba(0,0,0,0.03); /* Subtle grid lines */
+    border: 1px solid rgba(0,0,0,0.03);
 }
 
 .trigger-btn:active {
@@ -976,13 +749,13 @@ onMounted(() => {
   font-size: 0.9rem;
 }
 
-.upload-icon {
-  font-size: 2rem;
+.upload-placeholder.compact {
+    padding: 20px 0;
+    min-height: 80px;
 }
 
-.preview-img {
-  width: 100%;
-  height: 100%;
+.upload-icon {
+  font-size: 2rem;
 }
 
 .re-upload-tip {
@@ -997,6 +770,39 @@ onMounted(() => {
   text-align: center;
   backdrop-filter: blur(4px);
 }
+
+.preview-scroll {
+  width: 100%;
+  height: 100%;
+  white-space: nowrap;
+}
+
+.preview-list {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  padding: 0 10px;
+  gap: 10px;
+}
+
+.preview-item {
+  display: inline-block;
+  width: 120px;
+  height: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+}
+
+.preview-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ==================== 表单元素 ==================== */
 
 .field {
   display: flex;
@@ -1029,6 +835,15 @@ onMounted(() => {
   margin-top: 8px;
 }
 
+.hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 8px;
+}
+
+/* ==================== 按钮 ==================== */
+
 .btn {
   border: none;
   font-family: inherit;
@@ -1056,7 +871,8 @@ onMounted(() => {
 }
 
 .btn.icon {
-  background: #fff;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(4px);
   border: 1px solid var(--line);
   width: 48px;
   height: 48px;
@@ -1065,17 +881,12 @@ onMounted(() => {
   box-shadow: 0 4px 12px rgba(0,0,0,0.03);
 }
 
-.hint {
-  font-size: 0.8rem;
-  color: var(--muted);
-  text-align: center;
-  margin-top: 8px;
-}
+/* ==================== 时间轴 ==================== */
 
 .timeline-shell {
   position: relative;
   z-index: 1;
-  padding: 0 6vw 80px; /* Reduced top padding */
+  padding: 0 6vw 80px;
 }
 
 .timeline-header {
@@ -1088,8 +899,12 @@ onMounted(() => {
 
 .timeline {
   width: 100%;
-  height: 70vh; /* Fixed height for vertical scroll */
-  white-space: normal; /* Allow wrap */
+  height: 70vh;
+  white-space: normal;
+}
+
+.timeline::-webkit-scrollbar {
+  display: none;
 }
 
 .timeline-content {
@@ -1099,19 +914,9 @@ onMounted(() => {
     margin: 0 auto;
 }
 
-.timeline::-webkit-scrollbar {
-  display: none;
-}
-
-.nav .btn.icon {
-  /* Ensure nav buttons are visible and nice */
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(4px);
-}
-
 .axis {
   position: absolute;
-  left: 26px; /* Align with dots */
+  left: 26px;
   top: 0;
   bottom: 0;
   width: 2px;
@@ -1120,10 +925,122 @@ onMounted(() => {
 
 .timeline-track {
   display: flex;
-  flex-direction: column; /* Vertical */
+  flex-direction: column;
   gap: 32px;
   padding-left: 0;
 }
+
+.timeline-item {
+  position: relative;
+  width: 100%;
+  padding-left: 60px;
+  display: block;
+}
+
+.timeline-item + .timeline-item {
+  margin-left: 0;
+}
+
+.dot {
+  position: absolute;
+  top: 24px;
+  left: 20px;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border: 4px solid var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(230, 180, 117, 0.4);
+  z-index: 2;
+}
+
+/* ==================== 卡片 ==================== */
+
+.card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  width: 100%;
+}
+
+.card:active {
+  transform: scale(0.99);
+}
+
+@media (hover: hover) {
+  .card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 20px 40px rgba(93, 64, 55, 0.12);
+  }
+}
+
+.photo {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4/3;
+  display: block;
+  object-fit: cover;
+}
+
+.video-placeholder {
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-body {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.date {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+  background: var(--bg-strong);
+  padding: 4px 10px;
+  border-radius: 12px;
+  align-self: flex-start;
+  font-weight: 500;
+}
+
+.title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.delete-btn-overlay {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    cursor: pointer;
+}
+
+.delete-icon {
+    font-size: 18px;
+    color: #fff;
+}
+
+/* ==================== 加载状态 ==================== */
 
 .loading-more {
   padding: 30px 0;
@@ -1155,143 +1072,16 @@ onMounted(() => {
     font-weight: 500;
 }
 
-
-.timeline-item {
-  position: relative;
-  width: 100%;
-  padding-left: 60px; /* Space for axis and dot */
-  display: block;
-}
-
-.timeline-item + .timeline-item {
-  margin-left: 0;
-}
-
-.dot {
-  position: absolute;
-  top: 24px;
-  left: 20px;
-  width: 14px;
-  height: 14px;
-  background: #fff;
-  border: 4px solid var(--accent);
-  border-radius: 50%;
-  box-shadow: 0 2px 8px rgba(230, 180, 117, 0.4);
-  z-index: 2;
-}
-
-.card {
-  position: relative;
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  width: 100%;
-}
-
-.delete-btn-overlay {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background: rgba(0, 0, 0, 0.5);
-    border-radius: 50%;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10;
-    cursor: pointer;
-}
-
-.delete-icon {
-    font-size: 18px;
-    color: #fff;
-}
-
-.card:active {
-  transform: scale(0.99);
-}
-
-@media (hover: hover) {
-  .card:hover {
-    transform: translateY(-8px);
-    box-shadow: 0 20px 40px rgba(93, 64, 55, 0.12);
-  }
-}
-
-.photo {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 4/3;
-  display: block;
-  object-fit: cover;
-}
-
-.card-body {
-  padding: 16px 20px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.date {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.7rem;
+.empty {
+  padding: 40px 32px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.4);
   color: var(--muted);
-  letter-spacing: 0.05em;
-  background: var(--bg-strong);
-  padding: 4px 10px;
-  border-radius: 12px;
-  align-self: flex-start;
-  font-weight: 500;
+  border: 2px dashed var(--line);
+  text-align: center;
 }
 
-.title {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--ink);
-  line-height: 1.4;
-  margin-top: 4px;
-}
-
-.delete-btn {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(4px);
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-  opacity: 0;
-  transform: scale(0.8);
-  transition: all 0.2s ease;
-}
-
-.card:hover .delete-btn, .card:active .delete-btn {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.delete-text {
-  font-size: 0; /* Hide text */
-}
-.delete-text::before {
-  content: "✕";
-  font-size: 14px;
-  color: var(--muted);
-  font-weight: bold;
-}
-
-
-
+/* ==================== 弹窗 ==================== */
 
 .modal-overlay {
     position: fixed;
@@ -1353,43 +1143,4 @@ onMounted(() => {
     border-top: 1px solid var(--line);
     text-align: right;
 }
-
-
-.preview-scroll {
-  width: 100%;
-  height: 100%;
-  white-space: nowrap;
-}
-
-.preview-list {
-  display: flex;
-  height: 100%;
-  align-items: center;
-  padding: 0 10px;
-  gap: 10px;
-}
-
-.preview-item {
-  display: inline-block;
-  width: 120px;
-  height: 120px;
-  border-radius: 8px;
-  overflow: hidden;
-  position: relative;
-  flex-shrink: 0;
-  border: 1px solid var(--line);
-}
-
-.preview-media {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.upload-placeholder.compact {
-    padding: 20px 0;
-    min-height: 80px;
-}
-
-
 </style>

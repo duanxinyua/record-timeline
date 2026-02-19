@@ -18,6 +18,10 @@ __pycache__/
 photo-timeline-backend/uploads/
 photo-timeline-backend/timeline.db
 photo-timeline-backend/timeline.db-journal
+photo-timeline-backend/timeline.db-wal
+photo-timeline-backend/timeline.db-shm
+photo-timeline-backend/config.php
+photo-timeline-backend/.db_migrated
 
 # Environment
 .env.local
