@@ -163,6 +163,12 @@
                   <view class="card-body">
                     <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
                     <text class="title">{{ item.title || appConfig.defaultItemTitle }}</text>
+                    <view class="meta-row" v-if="item.taken_at">
+                      <text class="meta-text">拍摄: {{ item.taken_at }}</text>
+                    </view>
+                    <view class="meta-row location" v-if="item.latitude && item.longitude" @click.stop="openMap(item.latitude, item.longitude)">
+                      <text class="meta-text">{{ formatCoord(item.latitude, item.longitude) }}</text>
+                    </view>
                   </view>
                   
                   <view class="delete-btn-overlay" @click.stop="confirmDelete(item.id)" v-if="isAdmin">
@@ -250,7 +256,7 @@ import { ref, computed, onMounted, reactive } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import { formatDate, isVideo, previewImage } from '../../utils.js';
 import * as api from '../../api.js';
-import { readExif } from '../../exif.js';
+import { extractMetadata } from '../../exif.js';
 
 // ==================== 状态 ====================
 
@@ -287,6 +293,24 @@ const isAdmin = computed(() => !!adminKey.value);
 
 const bindDateChange = (e) => { dateValue.value = e.detail.value; };
 const bindTimeChange = (e) => { timeValue.value = e.detail.value; };
+
+// ==================== 位置信息 ====================
+
+const formatCoord = (lat, lng) => {
+    if (!lat || !lng) return '';
+    const latDir = lat >= 0 ? 'N' : 'S';
+    const lngDir = lng >= 0 ? 'E' : 'W';
+    return `${Math.abs(lat).toFixed(4)}°${latDir}, ${Math.abs(lng).toFixed(4)}°${lngDir}`;
+};
+
+const openMap = (lat, lng) => {
+    // #ifdef H5
+    window.open(`https://uri.amap.com/marker?position=${lng},${lat}`, '_blank');
+    // #endif
+    // #ifndef H5
+    uni.openLocation({ latitude: parseFloat(lat), longitude: parseFloat(lng) });
+    // #endif
+};
 
 // ==================== 文件上传 ====================
 
@@ -356,10 +380,10 @@ const triggerH5Input = (sourceType, mediaType) => {
         if (files && files.length > 0) {
             const items = [];
             for (const file of Array.from(files)) {
-                // 在上传前从原始文件读取 EXIF（图片才需要）
+                // 在上传前从原始文件提取元数据（EXIF + lastModified 兜底）
                 let clientExif = null;
                 if (mediaType === 'image') {
-                    clientExif = await readExif(file);
+                    clientExif = await extractMetadata(file);
                 }
                 items.push({
                     file: file,
@@ -433,7 +457,8 @@ const addItems = async () => {
                 src: item.src,
                 thumb: item.thumb,
                 latitude: item.exif ? item.exif.latitude : null,
-                longitude: item.exif ? item.exif.longitude : null
+                longitude: item.exif ? item.exif.longitude : null,
+                taken_at: (item.exif && item.exif.date) ? item.exif.date : null
             };
 
             const savedItem = await api.createItem(adminKey.value, newItem);
@@ -1029,6 +1054,23 @@ onMounted(() => {
   color: var(--ink);
   line-height: 1.4;
   margin-top: 4px;
+}
+
+.meta-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.meta-row.location {
+  cursor: pointer;
+}
+
+.meta-text {
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
 }
 
 .delete-btn-overlay {
