@@ -698,7 +698,7 @@ if (($uri === '/config' || $uri === '/config/') && $method === 'POST') {
     $data = getJsonBody();
 
     // 白名单字段
-    $fields = ['appTitle', 'kicker', 'mainTitle', 'subTitle', 'timelineTitle', 'emptyText', 'defaultItemTitle', 'unknownDateText', 'pageSize'];
+    $fields = ['appTitle', 'kicker', 'mainTitle', 'subTitle', 'timelineTitle', 'emptyText', 'defaultItemTitle', 'unknownDateText', 'pageSize', 'loadingText', 'loadMoreText', 'endText', 'takenAtLabel'];
 
     $setClauses = [];
     $params = [];

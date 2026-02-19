@@ -196,7 +196,7 @@
                       <text class="title" v-if="item.title">{{ item.title }}</text>
                       <text class="description" v-if="item.description">{{ item.description }}</text>
                       <view class="meta-row" v-if="item.taken_at">
-                        <text class="meta-text">拍摄: {{ item.taken_at }}</text>
+                        <text class="meta-text">{{ appConfig.takenAtLabel }} {{ item.taken_at }}</text>
                       </view>
                       <view class="meta-row location" v-if="item.address || (item.latitude && item.longitude)" @click.stop="openMap(item.latitude, item.longitude)">
                         <text class="meta-text">{{ item.address || formatCoord(item.latitude, item.longitude) }}</text>
@@ -219,15 +219,15 @@
             <!-- 加载状态 -->
             <view class="loading-more" v-if="items.length > 0">
                 <template v-if="isLoading">
-                    <text class="loading-text">加载中...</text>
+                    <text class="loading-text">{{ appConfig.loadingText }}</text>
                 </template>
                 <template v-else-if="hasMore">
-                     <text class="loading-text">上拉加载更多</text>
+                     <text class="loading-text">{{ appConfig.loadMoreText }}</text>
                 </template>
                 <template v-else>
                     <view class="no-more-data">
                         <view class="divider"></view>
-                        <text class="no-more-text">THE END</text>
+                        <text class="no-more-text">{{ appConfig.endText }}</text>
                         <view class="divider"></view>
                     </view>
                 </template>
@@ -279,6 +279,24 @@
                 <view class="field">
                     <text class="label-text">每页加载数量</text>
                     <input class="uni-input" type="number" v-model.number="editConfig.pageSize" />
+                </view>
+                <view class="settings-divider"></view>
+                <text class="settings-section-title">加载状态文字</text>
+                <view class="field">
+                    <text class="label-text">加载中提示</text>
+                    <input class="uni-input" v-model="editConfig.loadingText" />
+                </view>
+                <view class="field">
+                    <text class="label-text">加载更多提示</text>
+                    <input class="uni-input" v-model="editConfig.loadMoreText" />
+                </view>
+                <view class="field">
+                    <text class="label-text">已到底提示</text>
+                    <input class="uni-input" v-model="editConfig.endText" />
+                </view>
+                <view class="field">
+                    <text class="label-text">拍摄时间前缀</text>
+                    <input class="uni-input" v-model="editConfig.takenAtLabel" />
                 </view>
             </view>
             <view class="modal-footer">
@@ -385,7 +403,11 @@ const appConfig = reactive({
     emptyText: "还没有照片，先上传几张吧。",
     defaultItemTitle: "未命名照片",
     unknownDateText: "未知时间",
-    pageSize: 5
+    pageSize: 5,
+    loadingText: "加载中...",
+    loadMoreText: "上拉加载更多",
+    endText: "THE END",
+    takenAtLabel: "拍摄:"
 });
 
 const editConfig = reactive({...appConfig});
@@ -1690,6 +1712,20 @@ onMounted(() => {
     cursor: pointer;
     line-height: 1;
     color: var(--muted);
+}
+
+.settings-divider {
+    height: 1px;
+    background: var(--line);
+    margin: 8px 0;
+}
+
+.settings-section-title {
+    font-size: 0.8rem;
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
 }
 
 .modal-body {
