@@ -91,6 +91,7 @@ try {
 
     // 新增列迁移（幂等，已存在则忽略）
     try { $pdo->exec("ALTER TABLE timelineitem ADD COLUMN address TEXT"); } catch (PDOException $e) {}
+    try { $pdo->exec("ALTER TABLE timelineitem ADD COLUMN description TEXT"); } catch (PDOException $e) {}
 
 } catch (PDOException $e) {
     http_response_code(500);

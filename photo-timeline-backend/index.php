@@ -525,7 +525,7 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'POST') {
         $address = resolveAddress($lat, $lng);
     }
 
-    $stmt = $pdo->prepare("INSERT INTO timelineitem (title, date, src, thumb, latitude, longitude, taken_at, address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt = $pdo->prepare("INSERT INTO timelineitem (title, date, src, thumb, latitude, longitude, taken_at, address, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([
         $data['title'] ?? '',
         $data['date'],
@@ -534,7 +534,8 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'POST') {
         $lat,
         $lng,
         $data['taken_at'] ?? null,
-        $address
+        $address,
+        $data['description'] ?? null
     ]);
 
     $id = $pdo->lastInsertId();
@@ -558,7 +559,7 @@ if (preg_match('#^/items/(\d+)$#', $uri, $matches) && $method === 'PUT') {
         exit();
     }
 
-    $fields = ['title', 'date'];
+    $fields = ['title', 'date', 'description', 'thumb'];
     $setClauses = [];
     $params = [];
     foreach ($fields as $field) {
