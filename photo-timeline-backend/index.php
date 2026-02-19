@@ -207,6 +207,46 @@ function buildUploadUrl($filename) {
 }
 
 /**
+ * 逆地理编码：坐标转地址（高德地图 API）
+ */
+function resolveAddress($lat, $lng) {
+    global $config;
+    $key = $config['amap_key'] ?? '';
+    if (empty($key) || !$lat || !$lng) return null;
+
+    $url = "https://restapi.amap.com/v3/geocode/regeo?" . http_build_query([
+        'key' => $key,
+        'location' => round($lng, 6) . ',' . round($lat, 6),
+        'extensions' => 'base'
+    ]);
+
+    $response = null;
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 5,
+            CURLOPT_SSL_VERIFYPEER => false
+        ]);
+        $response = curl_exec($ch);
+        curl_close($ch);
+    } elseif (ini_get('allow_url_fopen')) {
+        $ctx = stream_context_create(['http' => ['timeout' => 5]]);
+        $response = @file_get_contents($url, false, $ctx);
+    }
+
+    if (!$response) return null;
+
+    $data = json_decode($response, true);
+    if ($data && isset($data['status']) && $data['status'] === '1'
+        && !empty($data['regeocode']['formatted_address'])) {
+        return $data['regeocode']['formatted_address'];
+    }
+
+    return null;
+}
+
+/**
  * 删除上传的文件（原图和缩略图）
  */
 function deleteUploadedFile($url) {
@@ -404,19 +444,30 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'POST') {
         exit();
     }
 
-    $stmt = $pdo->prepare("INSERT INTO timelineitem (title, date, src, thumb, latitude, longitude, taken_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $lat = $data['latitude'] ?? null;
+    $lng = $data['longitude'] ?? null;
+
+    // 逆地理编码：坐标转地址
+    $address = $data['address'] ?? null;
+    if (!$address && $lat && $lng) {
+        $address = resolveAddress($lat, $lng);
+    }
+
+    $stmt = $pdo->prepare("INSERT INTO timelineitem (title, date, src, thumb, latitude, longitude, taken_at, address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([
         $data['title'] ?? '',
         $data['date'],
         $data['src'],
         $data['thumb'] ?? null,
-        $data['latitude'] ?? null,
-        $data['longitude'] ?? null,
-        $data['taken_at'] ?? null
+        $lat,
+        $lng,
+        $data['taken_at'] ?? null,
+        $address
     ]);
 
     $id = $pdo->lastInsertId();
     $data['id'] = (int)$id;
+    $data['address'] = $address;
     echo json_encode($data);
     exit();
 }

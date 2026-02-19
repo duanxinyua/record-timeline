@@ -166,8 +166,8 @@
                     <view class="meta-row" v-if="item.taken_at">
                       <text class="meta-text">拍摄: {{ item.taken_at }}</text>
                     </view>
-                    <view class="meta-row location" v-if="item.latitude && item.longitude" @click.stop="openMap(item.latitude, item.longitude)">
-                      <text class="meta-text">{{ formatCoord(item.latitude, item.longitude) }}</text>
+                    <view class="meta-row location" v-if="item.address || (item.latitude && item.longitude)" @click.stop="openMap(item.latitude, item.longitude)">
+                      <text class="meta-text">{{ item.address || formatCoord(item.latitude, item.longitude) }}</text>
                     </view>
                   </view>
                   
