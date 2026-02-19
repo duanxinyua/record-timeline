@@ -93,6 +93,10 @@ try {
     try { $pdo->exec("ALTER TABLE timelineitem ADD COLUMN address TEXT"); } catch (PDOException $e) {}
     try { $pdo->exec("ALTER TABLE timelineitem ADD COLUMN description TEXT"); } catch (PDOException $e) {}
     try { $pdo->exec("ALTER TABLE timelineitem ADD COLUMN deleted_at TEXT"); } catch (PDOException $e) {}
+    try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN loadingText TEXT DEFAULT '加载中...'"); } catch (PDOException $e) {}
+    try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN loadMoreText TEXT DEFAULT '上拉加载更多'"); } catch (PDOException $e) {}
+    try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN endText TEXT DEFAULT 'THE END'"); } catch (PDOException $e) {}
+    try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN takenAtLabel TEXT DEFAULT '拍摄:'"); } catch (PDOException $e) {}
 
 } catch (PDOException $e) {
     http_response_code(500);

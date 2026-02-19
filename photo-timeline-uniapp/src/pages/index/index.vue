@@ -61,7 +61,7 @@
                       <text class="title" v-if="item.title">{{ item.title }}</text>
                       <text class="description" v-if="item.description">{{ item.description }}</text>
                       <view class="meta-row" v-if="item.taken_at">
-                        <text class="meta-text">拍摄: {{ item.taken_at }}</text>
+                        <text class="meta-text">{{ appConfig.takenAtLabel }} {{ item.taken_at }}</text>
                       </view>
                       <view class="meta-row location" v-if="item.address || (item.latitude && item.longitude)" @click.stop="openMap(item.latitude, item.longitude)">
                         <text class="meta-text">{{ item.address || formatCoord(item.latitude, item.longitude) }}</text>
@@ -75,15 +75,15 @@
             <!-- 加载状态 -->
             <view class="loading-more" v-if="items.length > 0">
                 <template v-if="isLoading">
-                    <text class="loading-text">加载中...</text>
+                    <text class="loading-text">{{ appConfig.loadingText }}</text>
                 </template>
                 <template v-else-if="hasMore">
-                     <text class="loading-text">上拉加载更多</text>
+                     <text class="loading-text">{{ appConfig.loadMoreText }}</text>
                 </template>
                 <template v-else>
                     <view class="no-more-data">
                         <view class="divider"></view>
-                        <text class="no-more-text">THE END</text>
+                        <text class="no-more-text">{{ appConfig.endText }}</text>
                         <view class="divider"></view>
                     </view>
                 </template>
@@ -126,7 +126,11 @@ const appConfig = reactive({
     emptyText: "还没有照片，先上传几张吧。",
     defaultItemTitle: "未命名照片",
     unknownDateText: "未知时间",
-    pageSize: 5
+    pageSize: 5,
+    loadingText: "加载中...",
+    loadMoreText: "上拉加载更多",
+    endText: "THE END",
+    takenAtLabel: "拍摄:"
 });
 
 // 数据状态
