@@ -962,6 +962,7 @@ const requestLogin = () => {
                     uni.setStorageSync('peanut_api_key', key);
                     adminKey.value = key;
                     uni.showToast({ title: '登录成功', icon: 'success' });
+                    initAfterAuth();
                 } catch (e) {
                     uni.showToast({ title: '密钥无效，请重新输入', icon: 'none' });
                 } finally {
@@ -1031,6 +1032,11 @@ const loadMore = () => {
 
 // ==================== 生命周期 ====================
 
+const initAfterAuth = () => {
+    loadConfig();
+    load();
+};
+
 onLoad((options) => {
     let key = options && options.key ? options.key : '';
 
@@ -1049,10 +1055,10 @@ onLoad((options) => {
             uni.setStorageSync('peanut_api_key', k);
             adminKey.value = k;
             uni.showToast({ title: '管理员模式已激活', icon: 'none' });
+            initAfterAuth();
         } catch (e) {
             uni.removeStorageSync('peanut_api_key');
             adminKey.value = '';
-            uni.showToast({ title: '密钥无效，请重新登录', icon: 'none' });
         }
     };
 
@@ -1070,9 +1076,6 @@ onMounted(() => {
     const now = new Date();
     dateValue.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     timeValue.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-    loadConfig();
-    load();
 });
 </script>
 
