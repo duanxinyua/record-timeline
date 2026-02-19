@@ -378,6 +378,7 @@ onMounted(async () => {
   align-items: center;
   margin-bottom: 24px;
   position: relative;
+  z-index: 10;
 }
 
 .search-input {
@@ -388,6 +389,7 @@ onMounted(async () => {
   border-radius: 20px;
   font-size: 0.95rem;
   transition: border-color 0.2s;
+  pointer-events: auto;
 }
 
 .search-input:focus {
