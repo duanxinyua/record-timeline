@@ -572,6 +572,15 @@ if (preg_match('#^/items/(\d+)$#', $uri, $matches) && $method === 'DELETE') {
     exit();
 }
 
+// POST /clear-addresses — 清除所有已缓存地址，强制重新解析
+if (($uri === '/clear-addresses' || $uri === '/clear-addresses/') && $method === 'POST') {
+    verifyKey();
+    $stmt = $pdo->exec("UPDATE timelineitem SET address = NULL WHERE address IS NOT NULL");
+    $count = $pdo->query("SELECT changes()")->fetchColumn();
+    echo json_encode(["ok" => true, "cleared" => (int)$count]);
+    exit();
+}
+
 // GET /config
 if (($uri === '/config' || $uri === '/config/') && $method === 'GET') {
     $stmt = $pdo->query("SELECT * FROM appconfig LIMIT 1");
