@@ -1,40 +1,187 @@
 /**
- * exif.js - 轻量级 JPEG EXIF 解析器
- * 提取拍摄时间 (DateTimeOriginal) 和 GPS 坐标
- * 如果 EXIF 解析失败，使用 File.lastModified 兜底
+ * exif.js - 轻量级媒体元数据解析器
+ * 支持 JPEG EXIF（拍摄时间 + GPS）和 MP4/MOV（创建时间 + GPS）
+ * 如果解析失败，使用 File.lastModified 兜底
  */
 
+const VIDEO_EXTS = ['mp4', 'mov', 'webm', 'avi', '3gp', 'm4v'];
+
 /**
- * 从 File 对象提取元数据（EXIF 优先，File.lastModified 兜底）
+ * 从 File 对象提取元数据（EXIF/MP4 优先，File.lastModified 兜底）
  * @param {File} file
  * @returns {Promise<{date?: string, latitude?: number, longitude?: number} | null>}
  */
 export async function extractMetadata(file) {
-    const exif = await readExif(file);
+    // 判断是否为视频文件
+    const ext = (file.name || '').split('.').pop().toLowerCase();
+    const isVideoFile = VIDEO_EXTS.includes(ext) || (file.type && file.type.startsWith('video/'));
+
+    const meta = isVideoFile ? await readVideoMeta(file) : await readExif(file);
 
     const result = {
-        date: exif?.date || null,
-        latitude: exif?.latitude ?? null,
-        longitude: exif?.longitude ?? null
+        date: meta?.date || null,
+        latitude: meta?.latitude ?? null,
+        longitude: meta?.longitude ?? null
     };
 
-    // 日期兜底：使用 File.lastModified（对所有图片格式都有效）
+    // 日期兜底：使用 File.lastModified
     if (!result.date && file && file.lastModified) {
         const d = new Date(file.lastModified);
         if (!isNaN(d.getTime())) {
-            result.date = [
-                d.getFullYear(),
-                String(d.getMonth() + 1).padStart(2, '0'),
-                String(d.getDate()).padStart(2, '0')
-            ].join(':') + ' ' + [
-                String(d.getHours()).padStart(2, '0'),
-                String(d.getMinutes()).padStart(2, '0'),
-                String(d.getSeconds()).padStart(2, '0')
-            ].join(':');
+            result.date = formatDateStr(d);
         }
     }
 
     return (result.date || result.latitude != null) ? result : null;
+}
+
+/**
+ * 格式化 Date 对象为 EXIF 格式字符串 "YYYY:MM:DD HH:mm:ss"
+ */
+function formatDateStr(d) {
+    return [
+        d.getFullYear(),
+        String(d.getMonth() + 1).padStart(2, '0'),
+        String(d.getDate()).padStart(2, '0')
+    ].join(':') + ' ' + [
+        String(d.getHours()).padStart(2, '0'),
+        String(d.getMinutes()).padStart(2, '0'),
+        String(d.getSeconds()).padStart(2, '0')
+    ].join(':');
+}
+
+// ==================== MP4/MOV 元数据解析 ====================
+
+/**
+ * 从 MP4/MOV 文件中提取创建时间和 GPS 坐标
+ * 通过解析 moov 原子中的 mvhd（时间）和 udta/©xyz（GPS）
+ */
+async function readVideoMeta(file) {
+    try {
+        const moovBuf = await findMoovAtom(file);
+        if (!moovBuf) return null;
+
+        const view = new DataView(moovBuf);
+        const result = {};
+
+        // 解析 mvhd 获取创建时间
+        const mvhd = findAtomIn(view, 0, moovBuf.byteLength, 0x6D766864); // 'mvhd'
+        if (mvhd) {
+            const version = view.getUint8(mvhd.start);
+            let creationTime;
+            if (version === 0) {
+                creationTime = view.getUint32(mvhd.start + 4);
+            } else {
+                // version 1: 64-bit timestamp
+                const high = view.getUint32(mvhd.start + 4);
+                const low = view.getUint32(mvhd.start + 8);
+                creationTime = high * 0x100000000 + low;
+            }
+            // Mac epoch (1904-01-01) 转 Unix epoch，差值 2082844800 秒
+            if (creationTime > 2082844800) {
+                const d = new Date((creationTime - 2082844800) * 1000);
+                if (!isNaN(d.getTime()) && d.getFullYear() >= 2000) {
+                    result.date = formatDateStr(d);
+                }
+            }
+        }
+
+        // 解析 udta/©xyz 获取 GPS 坐标
+        const udta = findAtomIn(view, 0, moovBuf.byteLength, 0x75647461); // 'udta'
+        if (udta) {
+            // ©xyz = 0xA978797A
+            const xyz = findAtomIn(view, udta.start, udta.end, 0xA978797A);
+            if (xyz) {
+                // 跳过 2 字节字符串长度 + 2 字节语言代码
+                const strStart = xyz.start + 4;
+                const strLen = xyz.end - strStart;
+                if (strLen > 0 && strLen < 200) {
+                    const bytes = new Uint8Array(moovBuf, strStart, strLen);
+                    const str = new TextDecoder().decode(bytes);
+                    const gps = parseISO6709(str);
+                    if (gps) {
+                        result.latitude = gps.latitude;
+                        result.longitude = gps.longitude;
+                    }
+                }
+            }
+        }
+
+        return (result.date || result.latitude != null) ? result : null;
+    } catch (e) {
+        console.warn('[MP4] 解析失败:', e);
+        return null;
+    }
+}
+
+/**
+ * 扫描文件顶层原子，找到 moov 并读取其内容
+ * moov 可能在文件头部（fast start）或尾部（mdat 之后）
+ */
+async function findMoovAtom(file) {
+    let offset = 0;
+    const fileSize = file.size;
+    // 最多扫描 20 个顶层原子，防止异常文件死循环
+    for (let i = 0; i < 20 && offset + 8 <= fileSize; i++) {
+        const hdrBuf = await file.slice(offset, offset + 8).arrayBuffer();
+        const hv = new DataView(hdrBuf);
+        let size = hv.getUint32(0);
+        const type = hv.getUint32(4);
+
+        // 扩展尺寸（size == 1 表示后 8 字节为 64 位大小）
+        let headerLen = 8;
+        if (size === 1 && offset + 16 <= fileSize) {
+            const extBuf = await file.slice(offset + 8, offset + 16).arrayBuffer();
+            const ev = new DataView(extBuf);
+            size = ev.getUint32(0) * 0x100000000 + ev.getUint32(4);
+            headerLen = 16;
+        }
+        // size == 0 表示原子延伸到文件末尾
+        if (size === 0) size = fileSize - offset;
+        if (size < 8) break;
+
+        // 'moov' = 0x6D6F6F76
+        if (type === 0x6D6F6F76) {
+            const contentSize = Math.min(size - headerLen, 5 * 1024 * 1024); // 最多读 5MB
+            return await file.slice(offset + headerLen, offset + headerLen + contentSize).arrayBuffer();
+        }
+
+        offset += size;
+    }
+    return null;
+}
+
+/**
+ * 在 buffer 中查找指定类型的子原子
+ */
+function findAtomIn(view, start, end, typeCode) {
+    let offset = start;
+    while (offset + 8 <= end) {
+        const size = view.getUint32(offset);
+        const type = view.getUint32(offset + 4);
+        if (size < 8) break;
+        if (type === typeCode) {
+            return { start: offset + 8, end: Math.min(offset + size, end) };
+        }
+        offset += size;
+    }
+    return null;
+}
+
+/**
+ * 解析 ISO 6709 格式的 GPS 字符串
+ * 格式: "+34.0522-118.2437+026.774/" 或 "+34.0522-118.2437/"
+ */
+function parseISO6709(str) {
+    const match = str.match(/([+-][\d.]+)([+-][\d.]+)/);
+    if (match) {
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+        if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+            return { latitude: lat, longitude: lng };
+        }
+    }
+    return null;
 }
 
 /**
