@@ -547,13 +547,20 @@ const requestLogin = () => {
         title: '管理员登录',
         editable: true,
         placeholderText: '请输入 API 密钥',
-        success: (res) => {
+        success: async (res) => {
             if (res.confirm && res.content) {
                 const key = res.content.trim();
-                if (key) {
+                if (!key) return;
+                uni.showLoading({ title: '验证中...' });
+                try {
+                    await api.verifyKey(key);
                     uni.setStorageSync('peanut_api_key', key);
                     adminKey.value = key;
                     uni.showToast({ title: '登录成功', icon: 'success' });
+                } catch (e) {
+                    uni.showToast({ title: '密钥无效，请重新输入', icon: 'none' });
+                } finally {
+                    uni.hideLoading();
                 }
             }
         }
@@ -631,14 +638,25 @@ onLoad((options) => {
     }
     // #endif
 
+    const tryKey = async (k) => {
+        try {
+            await api.verifyKey(k);
+            uni.setStorageSync('peanut_api_key', k);
+            adminKey.value = k;
+            uni.showToast({ title: '管理员模式已激活', icon: 'none' });
+        } catch (e) {
+            uni.removeStorageSync('peanut_api_key');
+            adminKey.value = '';
+            uni.showToast({ title: '密钥无效，请重新登录', icon: 'none' });
+        }
+    };
+
     if (key) {
-        uni.setStorageSync('peanut_api_key', key);
-        adminKey.value = key;
-        uni.showToast({ title: '管理员模式已激活', icon: 'none' });
+        tryKey(key);
     } else {
         const stored = uni.getStorageSync('peanut_api_key');
         if (stored) {
-            adminKey.value = stored;
+            tryKey(stored);
         }
     }
 });

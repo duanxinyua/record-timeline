@@ -12,6 +12,29 @@ const API_BASE = 'https://api.hetao.us';
 export const getApiBaseUrl = () => API_BASE;
 
 /**
+ * 验证 API Key 是否有效
+ */
+export const verifyKey = (apiKey) => {
+    return new Promise((resolve, reject) => {
+        uni.request({
+            url: `${API_BASE}/verify-key`,
+            method: 'GET',
+            header: { 'x-api-key': apiKey },
+            success: (res) => {
+                if (res.statusCode === 200) {
+                    resolve(true);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
+                } else {
+                    reject(new Error('验证失败'));
+                }
+            },
+            fail: (e) => reject(e)
+        });
+    });
+};
+
+/**
  * 获取应用配置
  */
 export const fetchConfig = () => {
