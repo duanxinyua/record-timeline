@@ -909,7 +909,7 @@ const handleSaveEdit = async () => {
 
 const loadConfig = async () => {
     try {
-        const data = await api.fetchConfig();
+        const data = await api.fetchConfig(adminKey.value);
         Object.assign(appConfig, data);
         if (appConfig.pageSize) {
             appConfig.pageSize = Number(appConfig.pageSize);
@@ -1003,7 +1003,7 @@ const load = async (isRefresh = true) => {
     const limit = appConfig.pageSize && Number(appConfig.pageSize) > 0 ? Number(appConfig.pageSize) : 5;
 
     try {
-        const data = await api.fetchItems(page.value, limit);
+        const data = await api.fetchItems(adminKey.value, page.value, limit);
         // 后端分页返回 { items, total, page, limit }
         const newItems = data.items || data;
         if (Array.isArray(newItems)) {

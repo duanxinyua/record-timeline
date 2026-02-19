@@ -37,11 +37,12 @@ export const verifyKey = (apiKey) => {
 /**
  * 获取应用配置
  */
-export const fetchConfig = () => {
+export const fetchConfig = (apiKey) => {
     return new Promise((resolve, reject) => {
         uni.request({
             url: `${API_BASE}/config`,
             method: 'GET',
+            header: { 'x-api-key': apiKey },
             success: (res) => {
                 if (res.statusCode === 200) {
                     resolve(res.data);
@@ -81,7 +82,7 @@ export const saveConfig = (apiKey, configData) => {
 /**
  * 获取时间轴条目（分页）
  */
-export const fetchItems = (page, limit) => {
+export const fetchItems = (apiKey, page, limit) => {
     return new Promise((resolve, reject) => {
         const url = (page > 0 && limit > 0)
             ? `${API_BASE}/items/?page=${page}&limit=${limit}`
@@ -90,6 +91,7 @@ export const fetchItems = (page, limit) => {
         uni.request({
             url,
             method: 'GET',
+            header: { 'x-api-key': apiKey },
             success: (res) => {
                 if (res.statusCode === 200) {
                     resolve(res.data);
