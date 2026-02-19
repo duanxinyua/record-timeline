@@ -447,10 +447,25 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'GET') {
     verifyKey();
     $page = isset($_GET['page']) ? (int)$_GET['page'] : 0;
     $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 0;
+    $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+
+    $whereClause = "WHERE deleted_at IS NULL";
+    $params = [];
+
+    if (!empty($search)) {
+        $whereClause .= " AND (title LIKE :search OR description LIKE :search OR address LIKE :search)";
+        $params[':search'] = "%{$search}%";
+    }
 
     if ($page > 0 && $limit > 0) {
         $offset = ($page - 1) * $limit;
-        $stmt = $pdo->prepare("SELECT * FROM timelineitem WHERE deleted_at IS NULL ORDER BY date DESC LIMIT :limit OFFSET :offset");
+        
+        $sql = "SELECT * FROM timelineitem $whereClause ORDER BY date DESC LIMIT :limit OFFSET :offset";
+        $stmt = $pdo->prepare($sql);
+        
+        if (!empty($search)) {
+            $stmt->bindValue(':search', $params[':search'], PDO::PARAM_STR);
+        }
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
@@ -473,7 +488,12 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'GET') {
         unset($item);
 
         // 返回总数以支持前端判断分页，同时保持主体为数组兼容旧版前端
-        $countStmt = $pdo->query("SELECT COUNT(*) FROM timelineitem WHERE deleted_at IS NULL");
+        $countSql = "SELECT COUNT(*) FROM timelineitem $whereClause";
+        $countStmt = $pdo->prepare($countSql);
+        if (!empty($search)) {
+            $countStmt->bindValue(':search', $params[':search'], PDO::PARAM_STR);
+        }
+        $countStmt->execute();
         $total = (int)$countStmt->fetchColumn();
 
         header('X-Total-Count: ' . $total);
@@ -483,7 +503,12 @@ if (($uri === '/items/' || $uri === '/items') && $method === 'GET') {
         echo json_encode($items);
     } else {
         // 无分页时也统一使用 DESC 排序
-        $stmt = $pdo->query("SELECT * FROM timelineitem WHERE deleted_at IS NULL ORDER BY date DESC");
+        $sql = "SELECT * FROM timelineitem $whereClause ORDER BY date DESC";
+        $stmt = $pdo->prepare($sql);
+        if (!empty($search)) {
+            $stmt->bindValue(':search', $params[':search'], PDO::PARAM_STR);
+        }
+        $stmt->execute();
         $items = $stmt->fetchAll();
 
         // 自动补全缺失地址

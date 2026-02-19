@@ -50,11 +50,16 @@ export const fetchConfig = (apiKey) => {
 /**
  * 获取时间轴条目（支持分页）
  */
-export const fetchItems = (apiKey, page = 0, limit = 0) => {
+export const fetchItems = (apiKey, page = 0, limit = 0, search = '') => {
     return new Promise((resolve, reject) => {
-        const url = (page > 0 && limit > 0)
+        let url = (page > 0 && limit > 0)
             ? `${API_BASE}/items/?page=${page}&limit=${limit}`
             : `${API_BASE}/items/`;
+            
+        if (search) {
+            const separator = url.includes('?') ? '&' : '?';
+            url += `${separator}search=${encodeURIComponent(search)}`;
+        }
 
         uni.request({
             url,
