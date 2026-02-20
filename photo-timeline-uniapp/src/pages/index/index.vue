@@ -67,29 +67,36 @@
                 >
                   <view class="dot"></view>
                   <view class="card">
-                    <video
-                      v-if="isVideo(item.src)"
-                      class="photo"
-                      :src="item.src"
-                      controls
-                    ></video>
-                    <image
-                      v-else
-                      class="photo"
-                      :src="item.thumb || item.src"
-                      mode="aspectFill"
-                      lazy-load
-                      @click="previewImage(item.src, allImageUrls)"
-                    ></image>
                     <view class="card-body">
                       <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
                       <text class="title" v-if="item.title">{{ item.title }}</text>
                       <text class="description" v-if="item.description">{{ item.description }}</text>
-                      <view class="meta-row" v-if="item.taken_at">
-                        <text class="meta-text">{{ appConfig.takenAtLabel }} {{ item.taken_at }}</text>
-                      </view>
-                      <view class="meta-row location" v-if="item.address || (item.latitude && item.longitude)" @click.stop="openMap(item.latitude, item.longitude)">
-                        <text class="meta-text">{{ item.address || formatCoord(item.latitude, item.longitude) }}</text>
+                    </view>
+
+                    <view class="media-list" v-if="item.media && item.media.length > 0">
+                      <view class="media-item" v-for="(m, mIndex) in item.media" :key="m.id || mIndex">
+                        <video
+                          v-if="isVideo(m.src)"
+                          class="photo"
+                          :src="m.src"
+                          controls
+                        ></video>
+                        <image
+                          v-else
+                          class="photo"
+                          :src="m.thumb || m.src"
+                          mode="aspectFill"
+                          lazy-load
+                          @click="previewImage(m.src, allImageUrls)"
+                        ></image>
+                        <view class="card-body-meta" v-if="m.taken_at || m.address || (m.latitude && m.longitude)">
+                          <view class="meta-row" v-if="m.taken_at">
+                            <text class="meta-text">{{ appConfig.takenAtLabel }} {{ m.taken_at }}</text>
+                          </view>
+                          <view class="meta-row location" v-if="m.address || (m.latitude && m.longitude)" @click.stop="openMap(m.latitude, m.longitude)">
+                            <text class="meta-text">{{ m.address || formatCoord(m.latitude, m.longitude) }}</text>
+                          </view>
+                        </view>
                       </view>
                     </view>
                   </view>
@@ -190,7 +197,15 @@ const groupedItems = computed(() => {
 
 // 所有图片 URL（用于全屏滑动浏览）
 const allImageUrls = computed(() => {
-    return items.value.filter(item => !isVideo(item.src)).map(item => item.src);
+    let urls = [];
+    for (const item of items.value) {
+        if (item.media) {
+            urls.push(...item.media.filter(m => !isVideo(m.src)).map(m => m.src));
+        } else if (item.src && !isVideo(item.src)) {
+            urls.push(item.src);
+        }
+    }
+    return urls;
 });
 
 // 加载配置
@@ -618,6 +633,17 @@ onMounted(async () => {
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.media-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 20px;
+}
+
+.card-body-meta {
+  padding: 10px 20px 0;
 }
 
 .meta-row {
