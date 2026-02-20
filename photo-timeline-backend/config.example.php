@@ -40,6 +40,7 @@ $corsAllowedOrigins = $rawCorsOrigins
     ? array_values(array_filter(array_map('trim', explode(',', $rawCorsOrigins))))
     : ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'https://hetao.us', 'https://admin.hetao.us', 'https://duanxinyu.hetao.us'];
 
+return [
     // ----------------------------------------------------------------------
     // 安全与核心配置
     // ----------------------------------------------------------------------

@@ -11,6 +11,7 @@ __pycache__/
 # Logs & Temp
 *.log
 *.tmp
+update-git-and-backend-perms.sh
 .idea/
 .vscode/
 
@@ -22,8 +23,16 @@ photo-timeline-backend/timeline.db-wal
 photo-timeline-backend/timeline.db-shm
 photo-timeline-backend/config.php
 photo-timeline-backend/.db_migrated
+photo-timeline-backend/.env
+
+# Build Artifacts
+photo-timeline-admin/dist/
+photo-timeline-uniapp/dist/
 
 # Environment
+.env
+.env.*
+!.env.example
 .env.local
 .env.development.local
 .env.test.local

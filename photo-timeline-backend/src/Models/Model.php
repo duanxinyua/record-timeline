@@ -27,7 +27,11 @@ class Model {
         
         foreach ($params as $key => $value) {
             $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
-            $stmt->bindValue($key, $value, $type);
+            if (is_int($key)) {
+                $stmt->bindValue($key + 1, $value, $type);
+            } else {
+                $stmt->bindValue($key, $value, $type);
+            }
         }
         
         $stmt->execute();
@@ -43,7 +47,11 @@ class Model {
         
         foreach ($params as $key => $value) {
             $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
-            $stmt->bindValue($key, $value, $type);
+            if (is_int($key)) {
+                $stmt->bindValue($key + 1, $value, $type);
+            } else {
+                $stmt->bindValue($key, $value, $type);
+            }
         }
         
         $stmt->execute();

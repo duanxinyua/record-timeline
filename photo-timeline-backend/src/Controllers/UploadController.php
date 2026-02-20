@@ -17,6 +17,30 @@ class UploadController {
         }
 
         $file = $_FILES['file'];
+        if (!is_array($file)) {
+            HttpUtils::jsonResponse(["detail" => "上传数据格式错误"], 400);
+        }
+
+        $uploadError = isset($file['error']) ? (int)$file['error'] : UPLOAD_ERR_NO_FILE;
+        if ($uploadError !== UPLOAD_ERR_OK) {
+            $errorMap = [
+                UPLOAD_ERR_INI_SIZE => '文件超过服务器允许大小',
+                UPLOAD_ERR_FORM_SIZE => '文件超过表单允许大小',
+                UPLOAD_ERR_PARTIAL => '文件上传不完整',
+                UPLOAD_ERR_NO_FILE => '没有上传文件',
+                UPLOAD_ERR_NO_TMP_DIR => '服务器缺少临时目录',
+                UPLOAD_ERR_CANT_WRITE => '服务器写入文件失败',
+                UPLOAD_ERR_EXTENSION => '文件上传被扩展拦截',
+            ];
+            HttpUtils::jsonResponse(["detail" => $errorMap[$uploadError] ?? ('上传失败，错误码: ' . $uploadError)], 400);
+        }
+
+        if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+            HttpUtils::jsonResponse(["detail" => "上传源文件无效"], 400);
+        }
+        if (!isset($file['size']) || (int)$file['size'] <= 0) {
+            HttpUtils::jsonResponse(["detail" => "上传文件为空"], 400);
+        }
 
         // MIME 类型白名单
         $mime_map = [
