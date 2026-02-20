@@ -42,13 +42,9 @@
       </view>
 
       <!-- 时间轴滚动区域 -->
-      <scroll-view 
-        class="timeline" 
-        scroll-y="true" 
-        scroll-with-animation="true"
-        @scrolltolower="loadMore"
-      >
+      <view class="timeline">
         <view class="timeline-content">
+            <view id="timeline-top-anchor" class="timeline-top-anchor"></view>
             <view class="axis" aria-hidden="true"></view>
             <view class="timeline-track">
               <view v-if="items.length === 0 && !isLoading" class="empty">
@@ -89,11 +85,11 @@
                           lazy-load
                           @click="previewImage(m.src, allImageUrls)"
                         ></image>
-                        <view class="card-body-meta" v-if="m.taken_at || m.address || (m.latitude && m.longitude)">
+                        <view class="card-body-meta" v-if="m.taken_at || m.address || hasCoord(m.latitude, m.longitude)">
                           <view class="meta-row" v-if="m.taken_at">
                             <text class="meta-text">{{ appConfig.takenAtLabel }} {{ m.taken_at }}</text>
                           </view>
-                          <view class="meta-row location" v-if="m.address || (m.latitude && m.longitude)" @click.stop="openMap(m.latitude, m.longitude)">
+                          <view class="meta-row location" v-if="m.address || hasCoord(m.latitude, m.longitude)" @click.stop="openMap(m.latitude, m.longitude)">
                             <text class="meta-text">{{ m.address || formatCoord(m.latitude, m.longitude) }}</text>
                           </view>
                         </view>
@@ -121,25 +117,75 @@
                 </template>
             </view>
         </view>
-      </scroll-view>
+      </view>
+      <view
+        class="back-top-btn"
+        :class="{ 'is-visible': showBackTop }"
+        :style="backTopInlineStyle"
+        @click="handleBackTopClick"
+        @touchstart.stop="onBackTopTouchStart"
+        @touchmove.stop.prevent="onBackTopTouchMove"
+        @touchend.stop="onBackTopTouchEnd"
+        @touchcancel.stop="onBackTopTouchEnd"
+      >
+        <view class="back-top-icon">
+          <view class="back-top-cap"></view>
+          <view class="back-top-shaft"></view>
+          <view class="back-top-head"></view>
+        </view>
+      </view>
+    </view>
+
+    <view class="auth-modal-overlay" v-if="showAuthModal">
+      <view class="auth-modal-card">
+        <view class="auth-modal-header">
+          <text class="auth-modal-title">密钥验证</text>
+          <view class="auth-close-btn" @click="closeAuthModal">✕</view>
+        </view>
+        <view class="auth-modal-body">
+          <text class="auth-lock">🔐</text>
+          <text class="auth-hint">请输入访问密钥</text>
+          <input
+            class="auth-input"
+            v-model="authKeyInput"
+            placeholder="请输入访问密钥"
+            :password="true"
+            confirm-type="done"
+            @confirm="submitAuthKey"
+          />
+        </view>
+        <view class="auth-modal-footer">
+          <button class="btn ghost" @click="closeAuthModal" :disabled="authLoading">取消</button>
+          <button class="btn primary" @click="submitAuthKey" :disabled="authLoading">
+            {{ authLoading ? '验证中...' : '确认' }}
+          </button>
+        </view>
+      </view>
     </view>
   </view>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, reactive } from 'vue';
+import { onLoad, onPageScroll, onReachBottom } from '@dcloudio/uni-app';
 import { formatDate, isVideo, previewImage } from '../../utils.js';
 import * as api from '../../api.js';
 
 // 位置格式化
+const hasCoord = (lat, lng) => (
+    lat !== null && lat !== undefined && lat !== '' &&
+    lng !== null && lng !== undefined && lng !== ''
+);
+
 const formatCoord = (lat, lng) => {
-    if (!lat || !lng) return '';
+    if (!hasCoord(lat, lng)) return '';
     const latDir = lat >= 0 ? 'N' : 'S';
     const lngDir = lng >= 0 ? 'E' : 'W';
     return `${Math.abs(lat).toFixed(4)}°${latDir}, ${Math.abs(lng).toFixed(4)}°${lngDir}`;
 };
 
 const openMap = (lat, lng) => {
+    if (!hasCoord(lat, lng)) return;
     // #ifdef H5
     window.open(`https://uri.amap.com/marker?position=${lng},${lat}`, '_blank');
     // #endif
@@ -166,8 +212,12 @@ const appConfig = reactive({
 });
 
 // 密钥状态
-const viewerKey = ref(uni.getStorageSync('peanut_viewer_key') || '');
+const viewerKey = ref('');
 const isAuthed = ref(false);
+const urlKeyUsed = ref(false);
+const showAuthModal = ref(false);
+const authKeyInput = ref('');
+const authLoading = ref(false);
 
 // 搜索状态
 const searchQuery = ref('');
@@ -177,6 +227,91 @@ const items = ref([]);
 const page = ref(1);
 const hasMore = ref(true);
 const isLoading = ref(false);
+const showBackTop = ref(false);
+const backTopLeft = ref(20);
+const backTopTop = ref(0);
+const backTopMoved = ref(false);
+const backTopDrag = reactive({
+    active: false,
+    startX: 0,
+    startY: 0,
+    originLeft: 20,
+    originTop: 0
+});
+const BACK_TOP_SIZE = 46;
+const BACK_TOP_MARGIN = 12;
+const backTopInlineStyle = computed(() => ({
+    left: `${backTopLeft.value}px`,
+    top: `${backTopTop.value}px`
+}));
+
+const getTouchXY = (e) => {
+    const touch = (e && e.touches && e.touches[0]) || (e && e.changedTouches && e.changedTouches[0]);
+    if (!touch) return { x: 0, y: 0 };
+    return {
+        x: Number(touch.clientX ?? touch.pageX ?? 0),
+        y: Number(touch.clientY ?? touch.pageY ?? 0)
+    };
+};
+
+const getWindowInfo = () => {
+    try {
+        const info = uni.getSystemInfoSync() || {};
+        const safeBottom = Number((info.safeAreaInsets && info.safeAreaInsets.bottom) || 0);
+        return {
+            width: Number(info.windowWidth || 375),
+            height: Number(info.windowHeight || 667),
+            safeBottom
+        };
+    } catch (e) {
+        return { width: 375, height: 667, safeBottom: 0 };
+    }
+};
+
+const clampBackTopPosition = (left, top) => {
+    const { width, height } = getWindowInfo();
+    const maxLeft = Math.max(BACK_TOP_MARGIN, width - BACK_TOP_SIZE - BACK_TOP_MARGIN);
+    const maxTop = Math.max(BACK_TOP_MARGIN, height - BACK_TOP_SIZE - BACK_TOP_MARGIN);
+    return {
+        left: Math.min(Math.max(left, BACK_TOP_MARGIN), maxLeft),
+        top: Math.min(Math.max(top, BACK_TOP_MARGIN), maxTop)
+    };
+};
+
+const initBackTopPosition = () => {
+    const { height, safeBottom } = getWindowInfo();
+    const targetTop = height - BACK_TOP_SIZE - safeBottom - 28;
+    const pos = clampBackTopPosition(BACK_TOP_MARGIN, targetTop);
+    backTopLeft.value = pos.left;
+    backTopTop.value = pos.top;
+};
+
+const onBackTopTouchStart = (e) => {
+    const point = getTouchXY(e);
+    backTopDrag.active = true;
+    backTopMoved.value = false;
+    backTopDrag.startX = point.x;
+    backTopDrag.startY = point.y;
+    backTopDrag.originLeft = backTopLeft.value;
+    backTopDrag.originTop = backTopTop.value;
+};
+
+const onBackTopTouchMove = (e) => {
+    if (!backTopDrag.active) return;
+    const point = getTouchXY(e);
+    const dx = point.x - backTopDrag.startX;
+    const dy = point.y - backTopDrag.startY;
+    if (Math.abs(dx) + Math.abs(dy) > 4) {
+        backTopMoved.value = true;
+    }
+    const pos = clampBackTopPosition(backTopDrag.originLeft + dx, backTopDrag.originTop + dy);
+    backTopLeft.value = pos.left;
+    backTopTop.value = pos.top;
+};
+
+const onBackTopTouchEnd = () => {
+    backTopDrag.active = false;
+};
 
 // 按年月分组
 const groupedItems = computed(() => {
@@ -230,6 +365,7 @@ const load = async (isRefresh = true) => {
         page.value = 1;
         hasMore.value = true;
         items.value = [];
+        showBackTop.value = false;
     }
 
     if (!hasMore.value) return;
@@ -255,12 +391,37 @@ const load = async (isRefresh = true) => {
     }
 };
 
+const scrollToTop = () => {
+    uni.pageScrollTo({
+        scrollTop: 0,
+        duration: 300
+    });
+};
+
+const handleBackTopClick = () => {
+    if (backTopMoved.value) {
+        backTopMoved.value = false;
+        return;
+    }
+    scrollToTop();
+};
+
 // 触底加载更多
 const loadMore = () => {
     if (hasMore.value && !isLoading.value) {
         load(false);
     }
 };
+
+onPageScroll((e) => {
+    const top = Number((e && e.scrollTop) || 0);
+    showBackTop.value = top > 480;
+});
+
+onReachBottom(() => {
+    if (!isAuthed.value) return;
+    loadMore();
+});
 
 // 搜索输入事件（H5 端兼容）
 const onSearchInput = (e) => {
@@ -283,34 +444,119 @@ const clearSearch = () => {
 
 // 输入密钥
 const requestKey = () => {
-    uni.showModal({
-        title: '输入密钥',
-        editable: true,
-        placeholderText: '请输入访问密钥',
-        success: async (res) => {
-            if (res.confirm && res.content) {
-                try {
-                    await api.verifyKey(res.content);
-                    viewerKey.value = res.content;
-                    uni.setStorageSync('peanut_viewer_key', res.content);
-                    isAuthed.value = true;
-                    loadConfig();
-                    load();
-                } catch (e) {
-                    uni.showToast({ title: '密钥错误', icon: 'none' });
-                }
-            }
+    showAuthModal.value = true;
+    authKeyInput.value = '';
+};
+
+const closeAuthModal = () => {
+    if (authLoading.value) return;
+    showAuthModal.value = false;
+    authKeyInput.value = '';
+};
+
+const submitAuthKey = async () => {
+    if (authLoading.value) return;
+    const key = authKeyInput.value.trim();
+    if (!key) {
+        uni.showToast({ title: '请输入密钥', icon: 'none' });
+        return;
+    }
+
+    authLoading.value = true;
+    try {
+        await api.verifyKey(key);
+        viewerKey.value = key;
+        uni.setStorageSync('peanut_viewer_key', key);
+        isAuthed.value = true;
+        showAuthModal.value = false;
+        authKeyInput.value = '';
+        loadConfig();
+        load();
+    } catch (e) {
+        uni.showToast({ title: '密钥错误', icon: 'none' });
+    } finally {
+        authLoading.value = false;
+    }
+};
+
+onLoad(() => {
+    let key = '';
+    let fromUrl = false;
+    let queryKeyDetected = false;
+
+    // #ifdef H5
+    if (window.location.search) {
+        const queryParams = new URLSearchParams(window.location.search);
+        if (queryParams.has('key')) {
+            queryKeyDetected = true;
+            const url = new URL(window.location.href);
+            url.searchParams.delete('key');
+            const query = url.searchParams.toString();
+            const cleanUrl = url.pathname + (query ? `?${query}` : '') + url.hash;
+            window.history.replaceState({}, '', cleanUrl);
         }
-    });
+    }
+
+    if (window.location.hash) {
+        const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+        const hashParams = new URLSearchParams(hash);
+        if (hashParams.has('key')) {
+            key = (hashParams.get('key') || '').trim();
+            fromUrl = !!key;
+        }
+    }
+    // #endif
+
+    if (key) {
+        viewerKey.value = key;
+        urlKeyUsed.value = fromUrl;
+    } else if (!queryKeyDetected) {
+        const stored = uni.getStorageSync('peanut_viewer_key');
+        if (stored) {
+            viewerKey.value = stored;
+        }
+    }
+});
+
+const clearUrlKey = () => {
+    // #ifdef H5
+    const url = new URL(window.location.href);
+    let changed = false;
+
+    if (url.searchParams.has('key')) {
+        url.searchParams.delete('key');
+        changed = true;
+    }
+
+    if (url.hash) {
+        const hash = url.hash.startsWith('#') ? url.hash.slice(1) : url.hash;
+        const hashParams = new URLSearchParams(hash);
+        if (hashParams.has('key')) {
+            hashParams.delete('key');
+            url.hash = hashParams.toString() ? `#${hashParams.toString()}` : '';
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        const query = url.searchParams.toString();
+        const cleanUrl = url.pathname + (query ? `?${query}` : '') + url.hash;
+        window.history.replaceState({}, '', cleanUrl);
+    }
+    // #endif
 };
 
 // 生命周期
 onMounted(async () => {
     uni.setNavigationBarTitle({ title: appConfig.appTitle });
+    initBackTopPosition();
     if (viewerKey.value) {
         try {
             await api.verifyKey(viewerKey.value);
             isAuthed.value = true;
+            if (urlKeyUsed.value) {
+                clearUrlKey();
+            }
             loadConfig();
             load();
         } catch (e) {
@@ -389,7 +635,7 @@ onMounted(async () => {
 .timeline-shell {
   position: relative;
   z-index: 1;
-  padding: 0 6vw 80px;
+  padding: 0 6vw 20px;
 }
 
 .timeline-header {
@@ -491,7 +737,6 @@ onMounted(async () => {
 
 .timeline {
   width: 100%;
-  height: 70vh;
   white-space: normal;
 }
 
@@ -694,6 +939,11 @@ onMounted(async () => {
     font-weight: 500;
 }
 
+.timeline-top-anchor {
+    width: 100%;
+    height: 0;
+}
+
 .login-card {
     margin-top: 32px;
     background: rgba(255,255,255,0.06);
@@ -715,5 +965,149 @@ onMounted(async () => {
     color: rgba(255,255,255,0.6);
     text-align: center;
     margin-bottom: 24px;
+}
+
+.auth-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 12000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+}
+
+.auth-modal-card {
+    width: min(88vw, 420px);
+    background: #fff;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+.auth-modal-header {
+    padding: 18px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--line);
+}
+
+.auth-modal-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.auth-close-btn {
+    padding: 6px;
+    line-height: 1;
+    color: var(--muted);
+}
+
+.auth-modal-body {
+    padding: 22px 20px 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.auth-lock {
+    font-size: 2rem;
+}
+
+.auth-hint {
+    font-size: 0.88rem;
+    color: var(--muted);
+}
+
+.auth-input {
+    width: 100%;
+    height: 42px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 0 12px;
+    font-size: 15px;
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.auth-modal-footer {
+    padding: 16px 20px 20px;
+    display: flex;
+    gap: 10px;
+}
+
+.auth-modal-footer .btn {
+    flex: 1;
+}
+
+.back-top-btn {
+    position: fixed;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: rgba(93, 64, 55, 0.9);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 22px rgba(93, 64, 55, 0.25);
+    z-index: 50;
+    opacity: 0;
+    transform: translateY(12px) scale(0.92);
+    pointer-events: none;
+    transition: opacity 0.22s ease, transform 0.22s ease, background 0.2s ease;
+    touch-action: none;
+}
+
+.back-top-btn.is-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.back-top-btn:active {
+    transform: scale(0.94);
+    background: rgba(93, 64, 55, 1);
+}
+
+.back-top-icon {
+    width: 18px;
+    height: 18px;
+    position: relative;
+}
+
+.back-top-cap {
+    position: absolute;
+    top: 1px;
+    left: 2px;
+    width: 14px;
+    height: 2px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.95);
+}
+
+.back-top-shaft {
+    position: absolute;
+    top: 5px;
+    left: 8px;
+    width: 2px;
+    height: 10px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.95);
+}
+
+.back-top-head {
+    position: absolute;
+    top: 4px;
+    left: 8px;
+    width: 8px;
+    height: 8px;
+    border-left: 2px solid rgba(255, 255, 255, 0.95);
+    border-top: 2px solid rgba(255, 255, 255, 0.95);
+    transform: translateX(-3px) rotate(45deg);
 }
 </style>

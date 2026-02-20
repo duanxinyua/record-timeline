@@ -75,9 +75,7 @@ if (preg_match('/\.(?:png|jpg|jpeg|gif|webp|bmp|mp4|mov|webm)$/', $uri)) {
  */
 function verifyKey($config) {
     $key = null;
-    if (isset($_GET['key'])) {
-        $key = $_GET['key'];
-    } elseif (isset($_SERVER['HTTP_X_API_KEY'])) {
+    if (isset($_SERVER['HTTP_X_API_KEY'])) {
         $key = $_SERVER['HTTP_X_API_KEY'];
     } elseif (function_exists('getallheaders')) {
         $headers = array_change_key_case(getallheaders(), CASE_LOWER);

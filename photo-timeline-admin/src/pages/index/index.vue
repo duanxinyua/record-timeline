@@ -165,13 +165,9 @@
         <view class="search-btn" @click="onSearch">搜索</view>
       </view>
 
-      <scroll-view 
-        class="timeline" 
-        scroll-y="true" 
-        scroll-with-animation="true"
-        @scrolltolower="loadMore"
-      >
+      <view class="timeline">
         <view class="timeline-content">
+            <view id="timeline-top-anchor" class="timeline-top-anchor"></view>
             <view class="axis" aria-hidden="true"></view>
             <view class="timeline-track">
               <view v-if="items.length === 0 && !isLoading" class="empty">
@@ -215,11 +211,11 @@
                           lazy-load
                           @click="previewImage(m.src, allImageUrls)"
                         ></image>
-                        <view class="card-body-meta" v-if="m.taken_at || m.address || (m.latitude && m.longitude)">
+                        <view class="card-body-meta" v-if="m.taken_at || m.address || hasCoord(m.latitude, m.longitude)">
                           <view class="meta-row" v-if="m.taken_at">
                             <text class="meta-text">{{ appConfig.takenAtLabel }} {{ m.taken_at }}</text>
                           </view>
-                          <view class="meta-row location" v-if="m.address || (m.latitude && m.longitude)" @click.stop="openMap(m.latitude, m.longitude)">
+                          <view class="meta-row location" v-if="m.address || hasCoord(m.latitude, m.longitude)" @click.stop="openMap(m.latitude, m.longitude)">
                             <text class="meta-text">{{ m.address || formatCoord(m.latitude, m.longitude) }}</text>
                           </view>
                         </view>
@@ -256,7 +252,51 @@
                 </template>
             </view>
         </view>
-      </scroll-view>
+      </view>
+      <view
+        class="back-top-btn"
+        :class="{ 'is-visible': showBackTop }"
+        :style="backTopInlineStyle"
+        @click="handleBackTopClick"
+        @touchstart.stop="onBackTopTouchStart"
+        @touchmove.stop.prevent="onBackTopTouchMove"
+        @touchend.stop="onBackTopTouchEnd"
+        @touchcancel.stop="onBackTopTouchEnd"
+      >
+        <view class="back-top-icon">
+          <view class="back-top-cap"></view>
+          <view class="back-top-shaft"></view>
+          <view class="back-top-head"></view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 登录验证弹窗 -->
+    <view class="modal-overlay auth-overlay" v-if="showAuthModal">
+        <view class="modal-content auth-modal">
+            <view class="modal-header">
+                <text class="modal-title">管理员登录</text>
+                <view class="close-btn" @click="closeAuthModal">✕</view>
+            </view>
+            <view class="modal-body auth-body">
+                <text class="auth-lock">🔐</text>
+                <text class="auth-hint">请输入 API 密钥验证身份</text>
+                <input
+                    class="uni-input auth-input"
+                    v-model="authKeyInput"
+                    placeholder="请输入 API 密钥"
+                    :password="true"
+                    confirm-type="done"
+                    @confirm="submitAuthLogin"
+                />
+            </view>
+            <view class="modal-footer auth-footer">
+                <button class="btn ghost" @click="closeAuthModal" :disabled="authLoading">取消</button>
+                <button class="btn primary" @click="submitAuthLogin" :disabled="authLoading">
+                    {{ authLoading ? '验证中...' : '验证并登录' }}
+                </button>
+            </view>
+        </view>
     </view>
 
     <!-- 设置弹窗 -->
@@ -410,7 +450,7 @@
 
 <script setup>
 import { ref, computed, onMounted, reactive } from 'vue';
-import { onLoad } from '@dcloudio/uni-app';
+import { onLoad, onPageScroll, onReachBottom } from '@dcloudio/uni-app';
 import { formatDate, isVideo, previewImage } from '../../utils.js';
 import * as api from '../../api.js';
 import { extractMetadata } from '../../exif.js';
@@ -435,6 +475,9 @@ const appConfig = reactive({
 
 const editConfig = reactive({...appConfig});
 const showSettingsModal = ref(false);
+const showAuthModal = ref(false);
+const authKeyInput = ref('');
+const authLoading = ref(false);
 
 const dateValue = ref('');
 const timeValue = ref('');
@@ -451,6 +494,91 @@ const searchQuery = ref('');
 const page = ref(1);
 const hasMore = ref(true);
 const isLoading = ref(false);
+const showBackTop = ref(false);
+const backTopLeft = ref(20);
+const backTopTop = ref(0);
+const backTopMoved = ref(false);
+const backTopDrag = reactive({
+    active: false,
+    startX: 0,
+    startY: 0,
+    originLeft: 20,
+    originTop: 0
+});
+const BACK_TOP_SIZE = 46;
+const BACK_TOP_MARGIN = 12;
+const backTopInlineStyle = computed(() => ({
+    left: `${backTopLeft.value}px`,
+    top: `${backTopTop.value}px`
+}));
+
+const getTouchXY = (e) => {
+    const touch = (e && e.touches && e.touches[0]) || (e && e.changedTouches && e.changedTouches[0]);
+    if (!touch) return { x: 0, y: 0 };
+    return {
+        x: Number(touch.clientX ?? touch.pageX ?? 0),
+        y: Number(touch.clientY ?? touch.pageY ?? 0)
+    };
+};
+
+const getWindowInfo = () => {
+    try {
+        const info = uni.getSystemInfoSync() || {};
+        const safeBottom = Number((info.safeAreaInsets && info.safeAreaInsets.bottom) || 0);
+        return {
+            width: Number(info.windowWidth || 375),
+            height: Number(info.windowHeight || 667),
+            safeBottom
+        };
+    } catch (e) {
+        return { width: 375, height: 667, safeBottom: 0 };
+    }
+};
+
+const clampBackTopPosition = (left, top) => {
+    const { width, height } = getWindowInfo();
+    const maxLeft = Math.max(BACK_TOP_MARGIN, width - BACK_TOP_SIZE - BACK_TOP_MARGIN);
+    const maxTop = Math.max(BACK_TOP_MARGIN, height - BACK_TOP_SIZE - BACK_TOP_MARGIN);
+    return {
+        left: Math.min(Math.max(left, BACK_TOP_MARGIN), maxLeft),
+        top: Math.min(Math.max(top, BACK_TOP_MARGIN), maxTop)
+    };
+};
+
+const initBackTopPosition = () => {
+    const { height, safeBottom } = getWindowInfo();
+    const targetTop = height - BACK_TOP_SIZE - safeBottom - 28;
+    const pos = clampBackTopPosition(BACK_TOP_MARGIN, targetTop);
+    backTopLeft.value = pos.left;
+    backTopTop.value = pos.top;
+};
+
+const onBackTopTouchStart = (e) => {
+    const point = getTouchXY(e);
+    backTopDrag.active = true;
+    backTopMoved.value = false;
+    backTopDrag.startX = point.x;
+    backTopDrag.startY = point.y;
+    backTopDrag.originLeft = backTopLeft.value;
+    backTopDrag.originTop = backTopTop.value;
+};
+
+const onBackTopTouchMove = (e) => {
+    if (!backTopDrag.active) return;
+    const point = getTouchXY(e);
+    const dx = point.x - backTopDrag.startX;
+    const dy = point.y - backTopDrag.startY;
+    if (Math.abs(dx) + Math.abs(dy) > 4) {
+        backTopMoved.value = true;
+    }
+    const pos = clampBackTopPosition(backTopDrag.originLeft + dx, backTopDrag.originTop + dy);
+    backTopLeft.value = pos.left;
+    backTopTop.value = pos.top;
+};
+
+const onBackTopTouchEnd = () => {
+    backTopDrag.active = false;
+};
 
 const isAdmin = computed(() => !!adminKey.value);
 
@@ -491,19 +619,33 @@ const bindTimeChange = (e) => { timeValue.value = e.detail.value; };
 
 // ==================== 位置信息 ====================
 
+const hasCoord = (lat, lng) => (
+    lat !== null && lat !== undefined && lat !== '' &&
+    lng !== null && lng !== undefined && lng !== ''
+);
+
 const formatCoord = (lat, lng) => {
-    if (!lat || !lng) return '';
+    if (!hasCoord(lat, lng)) return '';
     const latDir = lat >= 0 ? 'N' : 'S';
     const lngDir = lng >= 0 ? 'E' : 'W';
     return `${Math.abs(lat).toFixed(4)}°${latDir}, ${Math.abs(lng).toFixed(4)}°${lngDir}`;
 };
 
 const openMap = (lat, lng) => {
+    if (!hasCoord(lat, lng)) return;
     // #ifdef H5
     window.open(`https://uri.amap.com/marker?position=${lng},${lat}`, '_blank');
     // #endif
     // #ifndef H5
     uni.openLocation({ latitude: parseFloat(lat), longitude: parseFloat(lng) });
+    // #endif
+};
+
+const revokeBlobUrl = (url) => {
+    // #ifdef H5
+    if (typeof url === 'string' && url.startsWith('blob:')) {
+        URL.revokeObjectURL(url);
+    }
     // #endif
 };
 
@@ -590,29 +732,42 @@ const handleBatchUpload = async (filePaths) => {
 
     try {
         for (let i = 0; i < filePaths.length; i++) {
-            uni.showLoading({ title: `正在上传 ${i+1}/${filePaths.length}` });
-            const data = await uploadOneFile(filePaths[i]);
+            const sourceItem = filePaths[i];
+            try {
+                uni.showLoading({ title: `正在上传 ${i+1}/${filePaths.length}` });
+                const data = await uploadOneFile(sourceItem);
 
-            // 视频无缩略图时，客户端截帧并上传
-            if (isVideo(data.url) && !data.thumb) {
-                const fileObj = (typeof filePaths[i] === 'object') ? filePaths[i].file : null;
-                if (fileObj) {
-                    const frameFile = await captureVideoFrame(fileObj);
-                    if (frameFile) {
-                        try {
-                            const thumbData = await api.uploadFile(adminKey.value, URL.createObjectURL(frameFile), frameFile);
-                            data.thumb = thumbData.url;
-                        } catch (e) { /* 截帧上传失败不影响主流程 */ }
+                // 视频无缩略图时，客户端截帧并上传
+                if (isVideo(data.url) && !data.thumb) {
+                    const fileObj = (typeof sourceItem === 'object') ? sourceItem.file : null;
+                    if (fileObj) {
+                        const frameFile = await captureVideoFrame(fileObj);
+                        if (frameFile) {
+                            let frameUrl = '';
+                            try {
+                                frameUrl = URL.createObjectURL(frameFile);
+                                const thumbData = await api.uploadFile(adminKey.value, frameUrl, frameFile);
+                                data.thumb = thumbData.url;
+                            } catch (e) {
+                                // 截帧上传失败不影响主流程
+                            } finally {
+                                revokeBlobUrl(frameUrl);
+                            }
+                        }
                     }
                 }
-            }
 
-            batchList.value.push({
-                src: data.url,
-                thumb: data.thumb,
-                name: data.filename || 'media',
-                exif: data.exif
-            });
+                batchList.value.push({
+                    src: data.url,
+                    thumb: data.thumb,
+                    name: data.filename || 'media',
+                    exif: data.exif
+                });
+            } finally {
+                if (sourceItem && typeof sourceItem === 'object' && sourceItem.path) {
+                    revokeBlobUrl(sourceItem.path);
+                }
+            }
         }
 
         if (batchList.value.length > 0) {
@@ -748,7 +903,7 @@ const confirmDelete = (id) => {
                 if (!isAdmin.value) return;
                 try {
                     await api.deleteItem(adminKey.value, id);
-                    items.value = items.value.filter(item => item.id !== id);
+                    await load(true);
                     uni.showToast({ title: '已移到回收站', icon: 'none' });
                 } catch (error) {
                     if (error.message === 'AUTH_FAILED') {
@@ -769,11 +924,15 @@ const confirmDelete = (id) => {
 const showTrashModal = ref(false);
 const trashItems = ref([]);
 
+const refreshTrash = async () => {
+    const data = await api.fetchTrash(adminKey.value);
+    trashItems.value = Array.isArray(data) ? data : [];
+};
+
 const openTrash = async () => {
     showTrashModal.value = true;
     try {
-        const data = await api.fetchTrash(adminKey.value);
-        trashItems.value = Array.isArray(data) ? data : [];
+        await refreshTrash();
     } catch (e) {
         uni.showToast({ title: '加载回收站失败', icon: 'none' });
     }
@@ -783,9 +942,9 @@ const closeTrash = () => { showTrashModal.value = false; };
 
 const handleRestore = async (id) => {
     try {
-        const restored = await api.restoreItem(adminKey.value, id);
-        trashItems.value = trashItems.value.filter(item => item.id !== id);
-        items.value.unshift(restored);
+        await api.restoreItem(adminKey.value, id);
+        await refreshTrash();
+        await load(true);
         uni.showToast({ title: '已恢复', icon: 'success' });
     } catch (e) {
         uni.showToast({ title: '恢复失败', icon: 'none' });
@@ -800,7 +959,8 @@ const handlePermanentDelete = (id) => {
             if (res.confirm) {
                 try {
                     await api.permanentDeleteItem(adminKey.value, id);
-                    trashItems.value = trashItems.value.filter(item => item.id !== id);
+                    await refreshTrash();
+                    await load(true);
                     uni.showToast({ title: '已彻底删除', icon: 'none' });
                 } catch (e) {
                     uni.showToast({ title: '删除失败', icon: 'none' });
@@ -818,7 +978,8 @@ const handleEmptyTrash = () => {
             if (res.confirm) {
                 try {
                     const result = await api.emptyTrash(adminKey.value);
-                    trashItems.value = [];
+                    await refreshTrash();
+                    await load(true);
                     uni.showToast({ title: `已清空 ${result.deleted} 项`, icon: 'none' });
                 } catch (e) {
                     uni.showToast({ title: '清空失败', icon: 'none' });
@@ -863,35 +1024,48 @@ const captureFrameFromUrl = (videoUrl) => {
 };
 
 const generateMissingThumbs = async () => {
-    const videoItems = items.value.filter(item => isVideo(item.src) && !item.thumb);
-    if (videoItems.length === 0) {
+    const videoMedia = [];
+    for (const item of items.value) {
+        const mediaList = Array.isArray(item.media) ? item.media : [];
+        for (const media of mediaList) {
+            if (isVideo(media.src) && !media.thumb) {
+                videoMedia.push({ id: media.id, src: media.src });
+            }
+        }
+    }
+
+    if (videoMedia.length === 0) {
         uni.showToast({ title: '所有视频都有封面', icon: 'none' });
         return;
     }
 
-    uni.showLoading({ title: `处理中 0/${videoItems.length}` });
+    uni.showLoading({ title: `处理中 0/${videoMedia.length}` });
     let success = 0;
 
-    for (let i = 0; i < videoItems.length; i++) {
-        uni.showLoading({ title: `截帧 ${i + 1}/${videoItems.length}` });
-        const item = videoItems[i];
+    for (let i = 0; i < videoMedia.length; i++) {
+        uni.showLoading({ title: `截帧 ${i + 1}/${videoMedia.length}` });
+        const media = videoMedia[i];
         try {
-            const frameFile = await captureFrameFromUrl(item.src);
+            const frameFile = await captureFrameFromUrl(media.src);
             if (frameFile) {
-                const thumbData = await api.uploadFile(adminKey.value, URL.createObjectURL(frameFile), frameFile);
-                await api.updateItem(adminKey.value, item.id, { thumb: thumbData.url });
-                // 更新本地列表
-                const idx = items.value.findIndex(it => String(it.id) === String(item.id));
-                if (idx >= 0) items.value[idx].thumb = thumbData.url;
+                let frameUrl = '';
+                try {
+                    frameUrl = URL.createObjectURL(frameFile);
+                    const thumbData = await api.uploadFile(adminKey.value, frameUrl, frameFile);
+                    await api.updateItem(adminKey.value, media.id, { thumb: thumbData.url });
+                } finally {
+                    revokeBlobUrl(frameUrl);
+                }
                 success++;
             }
         } catch (e) {
-            console.warn('视频截帧失败:', item.id, e);
+            console.warn('视频截帧失败:', media.id, e);
         }
     }
 
     uni.hideLoading();
-    uni.showToast({ title: `已生成 ${success}/${videoItems.length} 个封面`, icon: 'none' });
+    await load(true);
+    uni.showToast({ title: `已生成 ${success}/${videoMedia.length} 个封面`, icon: 'none' });
 };
 
 // ==================== 编辑条目 ====================
@@ -925,11 +1099,8 @@ const handleSaveEdit = async () => {
         updateData.date = new Date(dateStr).toISOString();
     }
     try {
-        const updated = await api.updateItem(adminKey.value, editItemData.id, updateData);
-        const idx = items.value.findIndex(i => String(i.id) === String(updated.id));
-        if (idx >= 0) {
-            items.value[idx] = updated;
-        }
+        await api.updateItem(adminKey.value, editItemData.id, updateData);
+        await load(true);
         showEditModal.value = false;
         uni.showToast({ title: '已更新', icon: 'success' });
     } catch (e) {
@@ -986,29 +1157,38 @@ const handleSaveSettings = async () => {
 // ==================== 认证 ====================
 
 const requestLogin = () => {
-    uni.showModal({
-        title: '管理员登录',
-        editable: true,
-        placeholderText: '请输入 API 密钥',
-        success: async (res) => {
-            if (res.confirm && res.content) {
-                const key = res.content.trim();
-                if (!key) return;
-                uni.showLoading({ title: '验证中...' });
-                try {
-                    await api.verifyKey(key);
-                    uni.setStorageSync('peanut_api_key', key);
-                    adminKey.value = key;
-                    uni.showToast({ title: '登录成功', icon: 'success' });
-                    initAfterAuth();
-                } catch (e) {
-                    uni.showToast({ title: '密钥无效，请重新输入', icon: 'none' });
-                } finally {
-                    uni.hideLoading();
-                }
-            }
-        }
-    });
+    showAuthModal.value = true;
+    authKeyInput.value = '';
+};
+
+const closeAuthModal = () => {
+    if (authLoading.value) return;
+    showAuthModal.value = false;
+    authKeyInput.value = '';
+};
+
+const submitAuthLogin = async () => {
+    if (authLoading.value) return;
+    const key = authKeyInput.value.trim();
+    if (!key) {
+        uni.showToast({ title: '请输入密钥', icon: 'none' });
+        return;
+    }
+
+    authLoading.value = true;
+    try {
+        await api.verifyKey(key);
+        uni.setStorageSync('peanut_api_key', key);
+        adminKey.value = key;
+        showAuthModal.value = false;
+        authKeyInput.value = '';
+        uni.showToast({ title: '登录成功', icon: 'success' });
+        initAfterAuth();
+    } catch (e) {
+        uni.showToast({ title: '密钥无效，请重新输入', icon: 'none' });
+    } finally {
+        authLoading.value = false;
+    }
 };
 
 const logout = () => {
@@ -1034,6 +1214,7 @@ const load = async (isRefresh = true) => {
         page.value = 1;
         hasMore.value = true;
         items.value = [];
+        showBackTop.value = false;
     }
 
     if (!hasMore.value) return;
@@ -1062,11 +1243,36 @@ const load = async (isRefresh = true) => {
     }
 };
 
+const scrollToTop = () => {
+    uni.pageScrollTo({
+        scrollTop: 0,
+        duration: 300
+    });
+};
+
+const handleBackTopClick = () => {
+    if (backTopMoved.value) {
+        backTopMoved.value = false;
+        return;
+    }
+    scrollToTop();
+};
+
 const loadMore = () => {
     if (hasMore.value && !isLoading.value) {
         load(false);
     }
 };
+
+onPageScroll((e) => {
+    const top = Number((e && e.scrollTop) || 0);
+    showBackTop.value = top > 480;
+});
+
+onReachBottom(() => {
+    if (!adminKey.value) return;
+    loadMore();
+});
 
 // 搜索输入事件（H5 端兼容）
 const onSearchInput = (e) => {
@@ -1093,23 +1299,70 @@ const initAfterAuth = () => {
     load();
 };
 
-onLoad((options) => {
-    let key = options && options.key ? options.key : '';
+onLoad(() => {
+    let key = '';
+    let keyFromUrl = false;
+    let queryKeyDetected = false;
 
     // #ifdef H5
-    if (!key && window.location.search) {
-        const params = new URLSearchParams(window.location.search);
-        if (params.has('key')) {
-            key = params.get('key');
+    if (window.location.search) {
+        const queryParams = new URLSearchParams(window.location.search);
+        if (queryParams.has('key')) {
+            queryKeyDetected = true;
+            const url = new URL(window.location.href);
+            url.searchParams.delete('key');
+            const query = url.searchParams.toString();
+            const cleanUrl = url.pathname + (query ? `?${query}` : '') + url.hash;
+            window.history.replaceState({}, '', cleanUrl);
+        }
+    }
+
+    if (window.location.hash) {
+        const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+        const hashParams = new URLSearchParams(hash);
+        if (hashParams.has('key')) {
+            key = (hashParams.get('key') || '').trim();
+            keyFromUrl = !!key;
         }
     }
     // #endif
 
-    const tryKey = async (k) => {
+    const clearUrlKey = () => {
+        // #ifdef H5
+        const url = new URL(window.location.href);
+        let changed = false;
+
+        if (url.searchParams.has('key')) {
+            url.searchParams.delete('key');
+            changed = true;
+        }
+
+        if (url.hash) {
+            const hash = url.hash.startsWith('#') ? url.hash.slice(1) : url.hash;
+            const hashParams = new URLSearchParams(hash);
+            if (hashParams.has('key')) {
+                hashParams.delete('key');
+                url.hash = hashParams.toString() ? `#${hashParams.toString()}` : '';
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            const query = url.searchParams.toString();
+            const cleanUrl = url.pathname + (query ? `?${query}` : '') + url.hash;
+            window.history.replaceState({}, '', cleanUrl);
+        }
+        // #endif
+    };
+
+    const tryKey = async (k, fromUrl = false) => {
         try {
             await api.verifyKey(k);
             uni.setStorageSync('peanut_api_key', k);
             adminKey.value = k;
+            if (fromUrl) {
+                clearUrlKey();
+            }
             uni.showToast({ title: '管理员模式已激活', icon: 'none' });
             initAfterAuth();
         } catch (e) {
@@ -1119,16 +1372,17 @@ onLoad((options) => {
     };
 
     if (key) {
-        tryKey(key);
+        tryKey(key, keyFromUrl);
     } else {
         const stored = uni.getStorageSync('peanut_api_key');
-        if (stored) {
-            tryKey(stored);
+        if (stored && !queryKeyDetected) {
+            tryKey(stored, false);
         }
     }
 });
 
 onMounted(() => {
+    initBackTopPosition();
     const now = new Date();
     dateValue.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     timeValue.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -1473,7 +1727,7 @@ onMounted(() => {
 .timeline-shell {
   position: relative;
   z-index: 1;
-  padding: 0 6vw 80px;
+  padding: 0 6vw 20px;
 }
 
 .timeline-header {
@@ -1575,7 +1829,6 @@ onMounted(() => {
 
 .timeline {
   width: 100%;
-  height: 70vh;
   white-space: normal;
 }
 
@@ -1815,6 +2068,11 @@ onMounted(() => {
     font-weight: 500;
 }
 
+.timeline-top-anchor {
+    width: 100%;
+    height: 0;
+}
+
 .empty {
   padding: 40px 32px;
   border-radius: 24px;
@@ -2001,5 +2259,111 @@ onMounted(() => {
     color: #fff !important;
     border: none;
     box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
+}
+
+.auth-overlay {
+    z-index: 11000;
+}
+
+.auth-modal {
+    max-width: 420px;
+}
+
+.auth-body {
+    align-items: center;
+    text-align: center;
+    gap: 12px;
+}
+
+.auth-lock {
+    font-size: 2.2rem;
+    line-height: 1;
+}
+
+.auth-hint {
+    font-size: 0.9rem;
+    color: var(--muted);
+}
+
+.auth-input {
+    width: 100%;
+    text-align: left;
+    margin-top: 4px;
+}
+
+.auth-footer {
+    display: flex;
+    gap: 10px;
+}
+
+.auth-footer .btn {
+    flex: 1;
+}
+
+.back-top-btn {
+    position: fixed;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: rgba(93, 64, 55, 0.9);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 22px rgba(93, 64, 55, 0.25);
+    z-index: 50;
+    opacity: 0;
+    transform: translateY(12px) scale(0.92);
+    pointer-events: none;
+    transition: opacity 0.22s ease, transform 0.22s ease, background 0.2s ease;
+    touch-action: none;
+}
+
+.back-top-btn.is-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.back-top-btn:active {
+    transform: scale(0.94);
+    background: rgba(93, 64, 55, 1);
+}
+
+.back-top-icon {
+    width: 18px;
+    height: 18px;
+    position: relative;
+}
+
+.back-top-cap {
+    position: absolute;
+    top: 1px;
+    left: 2px;
+    width: 14px;
+    height: 2px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.95);
+}
+
+.back-top-shaft {
+    position: absolute;
+    top: 5px;
+    left: 8px;
+    width: 2px;
+    height: 10px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.95);
+}
+
+.back-top-head {
+    position: absolute;
+    top: 4px;
+    left: 8px;
+    width: 8px;
+    height: 8px;
+    border-left: 2px solid rgba(255, 255, 255, 0.95);
+    border-top: 2px solid rgba(255, 255, 255, 0.95);
+    transform: translateX(-3px) rotate(45deg);
 }
 </style>

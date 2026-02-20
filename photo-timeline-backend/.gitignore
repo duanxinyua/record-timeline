@@ -1,4 +1,8 @@
 config.php
+.env
 timeline.db
+timeline.db-journal
+timeline.db-wal
+timeline.db-shm
 uploads/
 .db_migrated

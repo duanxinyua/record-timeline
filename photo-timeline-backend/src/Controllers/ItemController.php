@@ -19,6 +19,35 @@ class ItemController {
         return json_decode(file_get_contents('php://input'), true);
     }
 
+    private function normalizeGroupId($groupId): string {
+        return trim((string)$groupId);
+    }
+
+    private function hasGroupId(array $item): bool {
+        return isset($item['group_id']) && $this->normalizeGroupId($item['group_id']) !== '';
+    }
+
+    /**
+     * 当 group_id 为空时，按前端逻辑兜底生成：毫秒时间戳-5位随机36进制
+     */
+    private function generateGroupIdFromData(array $data): string {
+        $ms = 0;
+        if (!empty($data['date'])) {
+            $ts = strtotime((string)$data['date']);
+            if ($ts !== false) {
+                $ms = (int)round($ts * 1000);
+            }
+        }
+        if ($ms <= 0) {
+            $ms = (int)floor(microtime(true) * 1000);
+        }
+
+        $rand = base_convert((string)random_int(0, 60466175), 10, 36);
+        $rand = str_pad($rand, 5, '0', STR_PAD_LEFT);
+
+        return $ms . '-' . $rand;
+    }
+
     /**
      * 获取列表页 (GET /items)
      */
@@ -35,8 +64,8 @@ class ItemController {
             $params[':search'] = "%{$search}%";
         }
 
-        // 使用 CAST 统一类型，避免 SQLite 整数与字符串比较不匹配
-        $gidExpr = "IFNULL(group_id, CAST(id AS TEXT))";
+        // 空 group_id 与 NULL 都回退到 id，确保 SQL 分组与 PHP 聚合语义一致
+        $gidExpr = "COALESCE(NULLIF(group_id, ''), CAST(id AS TEXT))";
 
         // 依靠分组表达式获取独立的"动态帖子"
         $groupSql = "SELECT $gidExpr as gid, MAX(date) as gdate FROM timelineitem WHERE $baseWhere GROUP BY $gidExpr ORDER BY gdate DESC";
@@ -76,7 +105,10 @@ class ItemController {
             // 在 PHP 中进行整合封装
             $grouped = [];
             foreach ($rawItems as $item) {
-                $gid = $item['group_id'] ?: (string)$item['id'];
+                $gid = $this->normalizeGroupId($item['group_id'] ?? '');
+                if ($gid === '') {
+                    $gid = (string)$item['id'];
+                }
                 if (!isset($grouped[$gid])) {
                     $grouped[$gid] = $item;
                     $grouped[$gid]['media'] = [];
@@ -125,8 +157,15 @@ class ItemController {
         $lng = $data['longitude'] ?? null;
         $address = $data['address'] ?? null;
 
-        if (!$address && $lat && $lng) {
+        $hasLat = $lat !== null && $lat !== '';
+        $hasLng = $lng !== null && $lng !== '';
+        if (!$address && $hasLat && $hasLng) {
             $address = GeoUtils::resolveAddress($lat, $lng, $this->config['amap_key']);
+        }
+
+        $groupId = isset($data['group_id']) ? trim((string)$data['group_id']) : '';
+        if ($groupId === '') {
+            $groupId = $this->generateGroupIdFromData($data);
         }
 
         $insertData = [
@@ -139,12 +178,13 @@ class ItemController {
             'taken_at' => $data['taken_at'] ?? null,
             'address' => $address,
             'description' => $data['description'] ?? null,
-            'group_id' => $data['group_id'] ?? null
+            'group_id' => $groupId
         ];
 
         $id = $this->model->insert($insertData);
         $data['id'] = (int)$id;
         $data['address'] = $address;
+        $data['group_id'] = $groupId;
 
         HttpUtils::jsonResponse($data);
     }
@@ -170,7 +210,8 @@ class ItemController {
 
         if (!empty($updateData)) {
             // 如果存在组 ID，同步更新这个组下所有的 title/description 等同源字段
-            if (!empty($target['group_id'])) {
+            if ($this->hasGroupId($target)) {
+                $targetGroupId = $this->normalizeGroupId($target['group_id']);
                 $subUpdate = [];
                 if (isset($updateData['title'])) $subUpdate['title'] = $updateData['title'];
                 if (isset($updateData['description'])) $subUpdate['description'] = $updateData['description'];
@@ -183,7 +224,7 @@ class ItemController {
                         $setClauses[] = "{$field} = ?";
                         $params[] = $value;
                     }
-                    $params[] = $target['group_id'];
+                    $params[] = $targetGroupId;
                     $sql = "UPDATE timelineitem SET " . implode(', ', $setClauses) . " WHERE group_id = ?";
                     $this->model->query($sql, $params);
                 }
@@ -204,8 +245,9 @@ class ItemController {
             HttpUtils::jsonResponse(["detail" => "条目不存在"], 404);
         }
 
-        if (!empty($item['group_id'])) {
-            $this->model->query("UPDATE timelineitem SET deleted_at = ? WHERE group_id = ?", [date('c'), $item['group_id']]);
+        if ($this->hasGroupId($item)) {
+            $groupId = $this->normalizeGroupId($item['group_id']);
+            $this->model->query("UPDATE timelineitem SET deleted_at = ? WHERE group_id = ?", [date('c'), $groupId]);
         } else {
             $this->model->softDelete($id);
         }
@@ -222,8 +264,9 @@ class ItemController {
             HttpUtils::jsonResponse(["detail" => "条目不在回收站中"], 404);
         }
 
-        if (!empty($item['group_id'])) {
-            $this->model->query("UPDATE timelineitem SET deleted_at = NULL WHERE group_id = ?", [$item['group_id']]);
+        if ($this->hasGroupId($item)) {
+            $groupId = $this->normalizeGroupId($item['group_id']);
+            $this->model->query("UPDATE timelineitem SET deleted_at = NULL WHERE group_id = ?", [$groupId]);
         } else {
             $this->model->restore($id);
         }
@@ -241,8 +284,9 @@ class ItemController {
         }
 
         // 以防这是一个 group 的项目
-        if (!empty($item['group_id'])) {
-            $items = $this->model->getList("group_id = ?", [$item['group_id']]);
+        if ($this->hasGroupId($item)) {
+            $groupId = $this->normalizeGroupId($item['group_id']);
+            $items = $this->model->getList("group_id = ?", [$groupId]);
             foreach ($items as $itm) {
                 $this->model->delete($itm['id']);
                 ImageUtils::deleteUploadedFile($itm['src'], $this->config['upload_dir']);
@@ -295,7 +339,10 @@ class ItemController {
         $resolved = 0;
         foreach ($items as &$item) {
             if ($resolved >= 2) break;
-            if (!empty($item['latitude']) && !empty($item['longitude']) && empty($item['address'])) {
+            $hasLat = isset($item['latitude']) && $item['latitude'] !== null && $item['latitude'] !== '';
+            $hasLng = isset($item['longitude']) && $item['longitude'] !== null && $item['longitude'] !== '';
+            $missingAddress = !isset($item['address']) || $item['address'] === null || $item['address'] === '';
+            if ($hasLat && $hasLng && $missingAddress) {
                 $address = GeoUtils::resolveAddress($item['latitude'], $item['longitude'], $this->config['amap_key']);
                 if ($address) {
                     $item['address'] = $address;
@@ -306,4 +353,3 @@ class ItemController {
         }
     }
 }
-

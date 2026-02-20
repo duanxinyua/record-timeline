@@ -7,7 +7,9 @@ class GeoUtils {
      * 优先高德地图（需 amap_key），兜底 Nominatim
      */
     public static function resolveAddress($lat, $lng, $amapKey = '', $sslVerify = true) {
-        if (!$lat || !$lng) return null;
+        $hasLat = $lat !== null && $lat !== '';
+        $hasLng = $lng !== null && $lng !== '';
+        if (!$hasLat || !$hasLng) return null;
 
         // 方案1：高德地图
         if (!empty($amapKey)) {
