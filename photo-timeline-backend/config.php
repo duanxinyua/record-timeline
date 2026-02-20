@@ -20,6 +20,7 @@ if (file_exists($envFile)) {
 }
 
 // 安全的环境变量读取函数（不依赖 putenv）
+if (!function_exists('env')) {
 function env($name, $default = null) {
     global $_ENV_LOADED;
     // 1. 优先从 .env 文件加载的值中读取
@@ -40,6 +41,7 @@ function env($name, $default = null) {
         return $_SERVER[$name];
     }
     return $default;
+}
 }
 // ---- .env 加载结束 ----
 
