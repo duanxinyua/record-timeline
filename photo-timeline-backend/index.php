@@ -2,6 +2,10 @@
 // index.php
 // API 路由器和控制器
 
+// 临时调试：显示错误（定位 500 后请删除这两行）
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
+
 // 加载配置
 $config = require __DIR__ . '/config.php';
 // ==================== CORS 跨域处理 ====================
