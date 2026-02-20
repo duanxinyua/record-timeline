@@ -55,6 +55,9 @@ try {
         )
     ");
 
+    // 先补充旧库可能缺少的 group_id 列（必须在建索引之前）
+    try { $pdo->exec("ALTER TABLE timelineitem ADD COLUMN group_id TEXT"); } catch (PDOException $e) {}
+
     // 创建索引（提升排序和分组查询性能）
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_timelineitem_date ON timelineitem(date)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_timelineitem_group ON timelineitem(group_id)");
