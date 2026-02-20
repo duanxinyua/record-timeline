@@ -2,6 +2,29 @@
 // config.example.php
 // 复制此文件为 config.php 后再按实际环境修改
 
+// ---- 自动加载 .env 文件（如果存在） ----
+$envFile = __DIR__ . '/.env';
+if (file_exists($envFile)) {
+    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        // 跳过注释行
+        if ($line === '' || $line[0] === '#') {
+            continue;
+        }
+        // 只处理 KEY=VALUE 格式
+        if (strpos($line, '=') !== false) {
+            list($name, $value) = explode('=', $line, 2);
+            $name = trim($name);
+            $value = trim($value);
+            // 如果系统环境变量中已经存在，则不覆盖
+            if (getenv($name) === false) {
+                putenv("$name=$value");
+            }
+        }
+    }
+}
+// ---- .env 加载结束 ----
 $envBool = function ($name, $default = false) {
     $value = getenv($name);
     if ($value === false || $value === '') {
