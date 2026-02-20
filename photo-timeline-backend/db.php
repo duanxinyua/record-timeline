@@ -35,7 +35,8 @@ try {
             thumb TEXT,
             latitude REAL,
             longitude REAL,
-            taken_at TEXT
+            taken_at TEXT,
+            group_id TEXT
         )
     ");
 
@@ -54,8 +55,9 @@ try {
         )
     ");
 
-    // 创建索引（提升排序查询性能）
+    // 创建索引（提升排序和分组查询性能）
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_timelineitem_date ON timelineitem(date)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_timelineitem_group ON timelineitem(group_id)");
 
     // 数据库迁移：使用版本标记避免每次请求都检查
     $migrationFile = __DIR__ . '/.db_migrated';
@@ -97,6 +99,7 @@ try {
     try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN loadMoreText TEXT DEFAULT '上拉加载更多'"); } catch (PDOException $e) {}
     try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN endText TEXT DEFAULT 'THE END'"); } catch (PDOException $e) {}
     try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN takenAtLabel TEXT DEFAULT '拍摄:'"); } catch (PDOException $e) {}
+    try { $pdo->exec("ALTER TABLE timelineitem ADD COLUMN group_id TEXT"); } catch (PDOException $e) {}
 
 } catch (PDOException $e) {
     http_response_code(500);

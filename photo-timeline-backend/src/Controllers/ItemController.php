@@ -27,30 +27,85 @@ class ItemController {
         $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 0;
         $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 
-        $whereClause = "deleted_at IS NULL";
+        $baseWhere = "deleted_at IS NULL";
         $params = [];
 
         if (!empty($search)) {
-            $whereClause .= " AND (title LIKE :search OR description LIKE :search OR address LIKE :search)";
+            $baseWhere .= " AND (title LIKE :search OR description LIKE :search OR address LIKE :search)";
             $params[':search'] = "%{$search}%";
         }
 
+        // 依靠 IFNULL(group_id, id) 获取独立的“动态帖子”数量
+        $groupSql = "SELECT IFNULL(group_id, id) as gid, MAX(date) as gdate FROM timelineitem WHERE $baseWhere GROUP BY gid ORDER BY gdate DESC";
+        
         if ($page > 0 && $limit > 0) {
             $offset = ($page - 1) * $limit;
-            $items = $this->model->getList($whereClause, $params, "ORDER BY date DESC", $limit, $offset);
-            $total = $this->model->getCount($whereClause, $params);
-            
+            $groupListSql = $groupSql . " LIMIT $limit OFFSET $offset";
+        } else {
+            $groupListSql = $groupSql;
+        }
+
+        $groups = $this->model->query($groupListSql, $params);
+
+        // 计算总动态数
+        $countSql = "SELECT COUNT(DISTINCT IFNULL(group_id, id)) as total FROM timelineitem WHERE $baseWhere";
+        $totalRows = $this->model->query($countSql, $params);
+        $total = $totalRows ? (int)$totalRows[0]['total'] : 0;
+
+        if ($page > 0 && $limit > 0) {
             header('X-Total-Count: ' . $total);
             header('X-Page: ' . $page);
             header('X-Limit: ' . $limit);
-        } else {
-            $items = $this->model->getList($whereClause, $params, "ORDER BY date DESC");
         }
 
-        // 自动补全缺失地址
-        $this->resolveAddresses($items);
+        $resultItems = [];
+        if (!empty($groups)) {
+            $gids = array_column($groups, 'gid');
+            $inQuery = implode(',', array_fill(0, count($gids), '?'));
+            
+            // 一次性查出属于这些组的所有图片项
+            $itemsSql = "SELECT * FROM timelineitem WHERE deleted_at IS NULL AND IFNULL(group_id, id) IN ($inQuery) ORDER BY date ASC";
+            $rawItems = $this->model->query($itemsSql, $gids);
+            
+            // 补全需要逆向解析的地理位置
+            $this->resolveAddresses($rawItems);
 
-        HttpUtils::jsonResponse($items);
+            // 在 PHP 中进行整合封装
+            $grouped = [];
+            foreach ($rawItems as $item) {
+                $gid = $item['group_id'] ?: $item['id'];
+                if (!isset($grouped[$gid])) {
+                    $grouped[$gid] = $item;
+                    $grouped[$gid]['media'] = [];
+                    // 清理不再需要在顶层的冗余属性
+                    unset($grouped[$gid]['src'], $grouped[$gid]['thumb'], $grouped[$gid]['latitude'], $grouped[$gid]['longitude']);
+                }
+                
+                // 将各自媒体信息推入 media 这个数组
+                $grouped[$gid]['media'][] = [
+                    'id' => $item['id'],
+                    'src' => $item['src'],
+                    'thumb' => $item['thumb'],
+                    'taken_at' => $item['taken_at'],
+                    'latitude' => $item['latitude'],
+                    'longitude' => $item['longitude'],
+                    'address' => $item['address'],
+                ];
+                
+                // 确保空标题可以被后续的图补足
+                if (empty($grouped[$gid]['title']) && !empty($item['title'])) $grouped[$gid]['title'] = $item['title'];
+                if (empty($grouped[$gid]['description']) && !empty($item['description'])) $grouped[$gid]['description'] = $item['description'];
+            }
+            
+            // 依照原倒序 MAX(date) 排列
+            foreach ($groups as $g) {
+                if (isset($grouped[$g['gid']])) {
+                    $resultItems[] = $grouped[$g['gid']];
+                }
+            }
+        }
+
+        HttpUtils::jsonResponse($resultItems);
     }
 
     /**
@@ -80,7 +135,8 @@ class ItemController {
             'longitude' => $lng,
             'taken_at' => $data['taken_at'] ?? null,
             'address' => $address,
-            'description' => $data['description'] ?? null
+            'description' => $data['description'] ?? null,
+            'group_id' => $data['group_id'] ?? null
         ];
 
         $id = $this->model->insert($insertData);
@@ -95,8 +151,9 @@ class ItemController {
      */
     public function update($id) {
         $data = $this->getJsonBody();
+        $target = $this->model->find($id);
 
-        if (!$this->model->find($id)) {
+        if (!$target) {
             HttpUtils::jsonResponse(["detail" => "条目不存在"], 404);
         }
 
@@ -109,7 +166,27 @@ class ItemController {
         }
 
         if (!empty($updateData)) {
-            $this->model->update($id, $updateData);
+            // 如果存在组 ID，同步更新这个组下所有的 title/description 等同源字段
+            if (!empty($target['group_id'])) {
+                $subUpdate = [];
+                if (isset($updateData['title'])) $subUpdate['title'] = $updateData['title'];
+                if (isset($updateData['description'])) $subUpdate['description'] = $updateData['description'];
+                if (isset($updateData['date'])) $subUpdate['date'] = $updateData['date'];
+                
+                if (!empty($subUpdate)) {
+                    $setClauses = [];
+                    $params = [];
+                    foreach ($subUpdate as $field => $value) {
+                        $setClauses[] = "{$field} = ?";
+                        $params[] = $value;
+                    }
+                    $params[] = $target['group_id'];
+                    $sql = "UPDATE timelineitem SET " . implode(', ', $setClauses) . " WHERE group_id = ?";
+                    $this->model->query($sql, $params);
+                }
+            } else {
+                $this->model->update($id, $updateData);
+            }
         }
 
         HttpUtils::jsonResponse($this->model->find($id));
@@ -119,12 +196,17 @@ class ItemController {
      * 软删除 (DELETE /items/{id})
      */
     public function delete($id) {
-        $item = $this->model->getList("id = :id AND deleted_at IS NULL", [':id' => $id]);
-        if (empty($item)) {
+        $item = $this->model->find($id);
+        if (empty($item) || $item['deleted_at'] !== null) {
             HttpUtils::jsonResponse(["detail" => "条目不存在"], 404);
         }
 
-        $this->model->softDelete($id);
+        if (!empty($item['group_id'])) {
+            $this->model->query("UPDATE timelineitem SET deleted_at = ? WHERE group_id = ?", [date('c'), $item['group_id']]);
+        } else {
+            $this->model->softDelete($id);
+        }
+        
         HttpUtils::jsonResponse(["ok" => true]);
     }
 
@@ -132,12 +214,17 @@ class ItemController {
      * 恢复软删除 (POST /items/{id}/restore)
      */
     public function restore($id) {
-        $item = $this->model->getList("id = :id AND deleted_at IS NOT NULL", [':id' => $id]);
-        if (empty($item)) {
+        $item = $this->model->find($id);
+        if (empty($item) || $item['deleted_at'] === null) {
             HttpUtils::jsonResponse(["detail" => "条目不在回收站中"], 404);
         }
 
-        $this->model->restore($id);
+        if (!empty($item['group_id'])) {
+            $this->model->query("UPDATE timelineitem SET deleted_at = NULL WHERE group_id = ?", [$item['group_id']]);
+        } else {
+            $this->model->restore($id);
+        }
+        
         HttpUtils::jsonResponse($this->model->find($id));
     }
 
@@ -150,9 +237,19 @@ class ItemController {
             HttpUtils::jsonResponse(["detail" => "条目不存在"], 404);
         }
 
-        $this->model->delete($id);
-        ImageUtils::deleteUploadedFile($item['src'], $this->config['upload_dir']);
-        ImageUtils::deleteUploadedFile($item['thumb'], $this->config['upload_dir']);
+        // 以防这是一个 group 的项目
+        if (!empty($item['group_id'])) {
+            $items = $this->model->getList("group_id = ?", [$item['group_id']]);
+            foreach ($items as $itm) {
+                $this->model->delete($itm['id']);
+                ImageUtils::deleteUploadedFile($itm['src'], $this->config['upload_dir']);
+                ImageUtils::deleteUploadedFile($itm['thumb'], $this->config['upload_dir']);
+            }
+        } else {
+            $this->model->delete($id);
+            ImageUtils::deleteUploadedFile($item['src'], $this->config['upload_dir']);
+            ImageUtils::deleteUploadedFile($item['thumb'], $this->config['upload_dir']);
+        }
 
         HttpUtils::jsonResponse(["ok" => true]);
     }
@@ -162,6 +259,7 @@ class ItemController {
      */
     public function getTrash() {
         $items = $this->model->getList("deleted_at IS NOT NULL", [], "ORDER BY deleted_at DESC");
+        // 因为在回收站只是预览删除的历史记录图片即可，暂时不将其聚合成动态对象
         HttpUtils::jsonResponse($items);
     }
 
@@ -205,3 +303,4 @@ class ItemController {
         }
     }
 }
+
