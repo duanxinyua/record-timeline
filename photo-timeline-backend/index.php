@@ -2,18 +2,34 @@
 // index.php
 // API 路由器和控制器
 
-header("Access-Control-Allow-Origin: *");
+// 加载配置
+$config = require __DIR__ . '/config.php';
+
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+$allowedOrigins = $config['cors_allowed_origins'] ?? [];
+$isOriginAllowed = false;
+
+if ($origin && is_array($allowedOrigins)) {
+    if (in_array('*', $allowedOrigins, true) || in_array($origin, $allowedOrigins, true)) {
+        $isOriginAllowed = true;
+        header("Access-Control-Allow-Origin: {$origin}");
+    }
+}
+
+header('Vary: Origin');
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, x-api-key");
 header("Content-Type: application/json; charset=UTF-8");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    if ($origin && !$isOriginAllowed) {
+        http_response_code(403);
+        echo json_encode(['detail' => 'Origin not allowed']);
+        exit();
+    }
     http_response_code(200);
     exit();
 }
-
-// 加载配置
-$config = require __DIR__ . '/config.php';
 
 // 禁用错误输出
 ini_set('display_errors', 0);
@@ -196,8 +212,15 @@ function createThumbnail($src, $dest, $maxWidth = null) {
  * 构建上传文件的完整 URL
  */
 function buildUploadUrl($filename) {
+    global $config;
+
+    $baseUrl = $config['base_url'] ?? '';
+    if (!empty($baseUrl)) {
+        return rtrim($baseUrl, '/') . '/uploads/' . $filename;
+    }
+
     $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
-    $host = $_SERVER['HTTP_HOST'];
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
 
     // 自动检测脚本路径，支持子目录部署
     $scriptDir = dirname($_SERVER['SCRIPT_NAME']);
@@ -210,12 +233,16 @@ function buildUploadUrl($filename) {
  * HTTP GET 请求
  */
 function httpGet($url, $headers = []) {
+    global $config;
+    $sslVerify = $config['ssl_verify'] ?? true;
+
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
         $opts = [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => 5,
-            CURLOPT_SSL_VERIFYPEER => false
+            CURLOPT_SSL_VERIFYPEER => $sslVerify,
+            CURLOPT_SSL_VERIFYHOST => $sslVerify ? 2 : 0,
         ];
         if ($headers) {
             $opts[CURLOPT_HTTPHEADER] = $headers;
@@ -225,7 +252,13 @@ function httpGet($url, $headers = []) {
         curl_close($ch);
         return $response ?: null;
     } elseif (ini_get('allow_url_fopen')) {
-        $opts = ['http' => ['timeout' => 5]];
+        $opts = [
+            'http' => ['timeout' => 5],
+            'ssl' => [
+                'verify_peer' => $sslVerify,
+                'verify_peer_name' => $sslVerify,
+            ],
+        ];
         if ($headers) {
             $opts['http']['header'] = implode("\r\n", $headers);
         }

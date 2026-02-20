@@ -1,0 +1,4 @@
+config.php
+timeline.db
+uploads/
+.db_migrated
