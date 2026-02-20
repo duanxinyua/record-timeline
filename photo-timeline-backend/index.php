@@ -5,14 +5,21 @@
 // 加载配置
 $config = require __DIR__ . '/config.php';
 
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowedOrigins = $config['cors_allowed_origins'] ?? [];
+// 处理 Origin，移除末尾斜杠以确保匹配一致
+$origin = rtrim($_SERVER['HTTP_ORIGIN'] ?? '', '/');
+
+$rawAllowedOrigins = $config['cors_allowed_origins'] ?? [];
+$allowedOrigins = array_map(function($url) {
+    return rtrim($url, '/');
+}, $rawAllowedOrigins);
+
 $isOriginAllowed = false;
 
 if ($origin && is_array($allowedOrigins)) {
     if (in_array('*', $allowedOrigins, true) || in_array($origin, $allowedOrigins, true)) {
         $isOriginAllowed = true;
-        header("Access-Control-Allow-Origin: {$origin}");
+        // 返回时必须带上原始请求传来的 Origin，不论有没有斜杠
+        header("Access-Control-Allow-Origin: " . ($_SERVER['HTTP_ORIGIN'] ?? ''));
     }
 }
 
@@ -90,17 +97,21 @@ if (preg_match('/\.(?:png|jpg|jpeg|gif|webp|bmp|mp4|mov|webm)$/', $uri)) {
 // ==================== 工具函数 ====================
 
 /**
- * 验证 API Key（仅通过 Header 传递）
+ * 验证 API Key（支持 Header 传递或 GET 参数 ?key=）
  */
 function verifyKey() {
     global $config;
     $key = null;
 
-    // 1. 通过 $_SERVER（Nginx/FastCGI 标准方式）
-    if (isset($_SERVER['HTTP_X_API_KEY'])) {
+    // 1. 优先尝试从 $_GET 获取
+    if (isset($_GET['key'])) {
+        $key = $_GET['key'];
+    }
+    // 2. 尝试从 $_SERVER（Nginx/FastCGI 标准方式）获取 Header
+    elseif (isset($_SERVER['HTTP_X_API_KEY'])) {
         $key = $_SERVER['HTTP_X_API_KEY'];
     }
-    // 2. 通过 getallheaders（Apache）
+    // 3. 通过 getallheaders（Apache）获取 Header
     elseif (function_exists('getallheaders')) {
         $headers = getallheaders();
         $headers = array_change_key_case($headers, CASE_LOWER);
