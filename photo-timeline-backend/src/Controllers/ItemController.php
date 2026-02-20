@@ -35,8 +35,11 @@ class ItemController {
             $params[':search'] = "%{$search}%";
         }
 
-        // 依靠 IFNULL(group_id, id) 获取独立的“动态帖子”数量
-        $groupSql = "SELECT IFNULL(group_id, id) as gid, MAX(date) as gdate FROM timelineitem WHERE $baseWhere GROUP BY gid ORDER BY gdate DESC";
+        // 使用 CAST 统一类型，避免 SQLite 整数与字符串比较不匹配
+        $gidExpr = "IFNULL(group_id, CAST(id AS TEXT))";
+
+        // 依靠分组表达式获取独立的"动态帖子"
+        $groupSql = "SELECT $gidExpr as gid, MAX(date) as gdate FROM timelineitem WHERE $baseWhere GROUP BY $gidExpr ORDER BY gdate DESC";
         
         if ($page > 0 && $limit > 0) {
             $offset = ($page - 1) * $limit;
@@ -48,7 +51,7 @@ class ItemController {
         $groups = $this->model->query($groupListSql, $params);
 
         // 计算总动态数
-        $countSql = "SELECT COUNT(DISTINCT IFNULL(group_id, id)) as total FROM timelineitem WHERE $baseWhere";
+        $countSql = "SELECT COUNT(DISTINCT $gidExpr) as total FROM timelineitem WHERE $baseWhere";
         $totalRows = $this->model->query($countSql, $params);
         $total = $totalRows ? (int)$totalRows[0]['total'] : 0;
 
@@ -64,7 +67,7 @@ class ItemController {
             $inQuery = implode(',', array_fill(0, count($gids), '?'));
             
             // 一次性查出属于这些组的所有图片项
-            $itemsSql = "SELECT * FROM timelineitem WHERE deleted_at IS NULL AND IFNULL(group_id, id) IN ($inQuery) ORDER BY date ASC";
+            $itemsSql = "SELECT * FROM timelineitem WHERE deleted_at IS NULL AND $gidExpr IN ($inQuery) ORDER BY date ASC";
             $rawItems = $this->model->query($itemsSql, $gids);
             
             // 补全需要逆向解析的地理位置
@@ -73,7 +76,7 @@ class ItemController {
             // 在 PHP 中进行整合封装
             $grouped = [];
             foreach ($rawItems as $item) {
-                $gid = $item['group_id'] ?: $item['id'];
+                $gid = $item['group_id'] ?: (string)$item['id'];
                 if (!isset($grouped[$gid])) {
                     $grouped[$gid] = $item;
                     $grouped[$gid]['media'] = [];
