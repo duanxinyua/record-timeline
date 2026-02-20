@@ -4,36 +4,28 @@
 
 // 加载配置
 $config = require __DIR__ . '/config.php';
-
-// 处理 Origin，移除末尾斜杠以确保匹配一致
+// ==================== CORS 跨域处理 ====================
 $origin = rtrim($_SERVER['HTTP_ORIGIN'] ?? '', '/');
+$rawAllowedOrigins = $config['cors_allowed_origins'] ?? ['*'];
+$allowedOrigins = array_map(function($url) { return rtrim($url, '/'); }, $rawAllowedOrigins);
+$hasWildcard = in_array('*', $allowedOrigins, true);
 
-$rawAllowedOrigins = $config['cors_allowed_origins'] ?? [];
-$allowedOrigins = array_map(function($url) {
-    return rtrim($url, '/');
-}, $rawAllowedOrigins);
-
-$isOriginAllowed = false;
-
-if ($origin && is_array($allowedOrigins)) {
-    if (in_array('*', $allowedOrigins, true) || in_array($origin, $allowedOrigins, true)) {
-        $isOriginAllowed = true;
-        // 返回时必须带上原始请求传来的 Origin，不论有没有斜杠
-        header("Access-Control-Allow-Origin: " . ($_SERVER['HTTP_ORIGIN'] ?? ''));
-    }
+// 设置 CORS 头
+if ($hasWildcard) {
+    // 通配符模式：允许所有来源
+    header("Access-Control-Allow-Origin: *");
+} elseif ($origin && in_array($origin, $allowedOrigins, true)) {
+    // 白名单模式：动态匹配 Origin
+    header("Access-Control-Allow-Origin: " . ($_SERVER['HTTP_ORIGIN'] ?? ''));
+    header('Vary: Origin');
 }
 
-header('Vary: Origin');
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, x-api-key");
 header("Content-Type: application/json; charset=UTF-8");
 
+// OPTIONS 预检请求：直接返回 200
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    if ($origin && !$isOriginAllowed) {
-        http_response_code(403);
-        echo json_encode(['detail' => 'Origin not allowed']);
-        exit();
-    }
     http_response_code(200);
     exit();
 }
