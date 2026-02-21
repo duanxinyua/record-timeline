@@ -109,7 +109,7 @@ curl http://127.0.0.1:8000/
 
 ```bash
 cd photo-timeline-admin
-npm ci
+npm install
 npm run dev:h5
 ```
 
@@ -117,7 +117,7 @@ npm run dev:h5
 
 ```bash
 cd photo-timeline-uniapp
-npm ci
+npm install
 npm run dev:h5
 ```
 
@@ -126,12 +126,16 @@ npm run dev:h5
 ```bash
 # 管理端
 cd photo-timeline-admin
-npm run build:h5
+npm install
+npm run buildh5
 
 # 用户端
 cd ../photo-timeline-uniapp
-npm run build:h5
+npm install
+npm run buildh5
 ```
+
+说明：`buildh5` 已在两个前端 `package.json` 中提供，等价于 `npm run build:h5`。
 
 输出目录：
 
@@ -166,6 +170,14 @@ npm run build:h5
 
 说明：除根路径健康检查外，业务接口都需要请求头 `x-api-key: <PEANUT_API_SECRET>`。
 
+接口参数（关键）：
+
+- `GET /items`：`page`（可选，>=1）、`limit`（可选，>0）、`search`（可选，标题/备注/地址模糊搜索）。
+- `GET /items/counts`：`search`（可选，和 `/items` 同口径过滤）。
+- `POST /items`（JSON）：`date`、`src` 必填；`description`、`thumb`、`group_id`、`latitude`、`longitude`、`taken_at` 可选。
+- `PUT /items/{id}`（JSON）：可更新 `title`、`description`、`date`、`thumb`。
+- `POST /upload`（form-data）：`file` 必填；`skip_thumb=1` 可选（跳过图片二次缩略图生成）；`exif_date`、`exif_lat`、`exif_lng` 可选。
+
 ## 数据说明（核心）
 
 `timelineitem` 主要字段：
@@ -191,7 +203,7 @@ npm run build:h5
 
 - `doc/deploy_bt.md`
 
-该文档包含宝塔 + Nginx + PHP 的完整配置步骤（伪静态、权限、前后端部署）。
+该文档包含宝塔 + Nginx + PHP 的完整配置步骤（伪静态、权限、前后端部署），并提供“纯宝塔面板操作”流程，不依赖命令行。
 
 ## 安全建议
 
