@@ -1,4 +1,4 @@
-# Peanut Timeline（花生时间轴）
+# 记录时间轴
 
 一个支持图片/视频发布、按时间轴浏览、EXIF 元数据提取与地理位置展示的三端项目。
 
@@ -6,7 +6,12 @@
 - 管理端：上传、编辑、删除、回收站、全局配置
 - 后端：PHP + SQLite API，负责鉴权、上传与数据聚合
 
-## 在线结构（当前仓库）
+## 仓库地址（GitHub）
+
+- SSH：`git@github.com:duanxinyua/record-timeline.git`
+- HTTPS：`https://github.com/duanxinyua/record-timeline.git`
+
+## 项目结构
 
 ```text
 hetao.us/
@@ -43,8 +48,8 @@ hetao.us/
 ### 1. 克隆项目
 
 ```bash
-git clone <your-repo-url>
-cd hetao.us
+git clone git@github.com:duanxinyua/record-timeline.git
+cd record-timeline
 ```
 
 ### 2. 配置后端
@@ -65,6 +70,15 @@ PEANUT_CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 PEANUT_SSL_VERIFY=true
 PEANUT_AMAP_KEY=
 ```
+
+参数作用说明：
+
+- `PEANUT_API_SECRET`：API 访问密钥。前端请求时通过 `x-api-key` 传递，建议使用高强度随机字符串。
+- `PEANUT_PRODUCTION`：是否生产环境。`true` 时后端会隐藏详细错误，仅返回通用错误信息。
+- `PEANUT_BASE_URL`：后端对外访问基准地址。用于生成上传文件的完整访问链接。
+- `PEANUT_CORS_ALLOWED_ORIGINS`：允许跨域访问的前端域名白名单，多个域名用英文逗号分隔。
+- `PEANUT_SSL_VERIFY`：后端请求外部 HTTPS 服务时是否校验证书，生产环境建议保持 `true`。
+- `PEANUT_AMAP_KEY`：高德地图 Web Service Key。用于将 EXIF 坐标解析为中文地址；留空则不走高德解析。
 
 ### 3. 启动后端
 
@@ -186,7 +200,3 @@ photo-timeline-backend/uploads/
 - 代码采用“前后端分仓内聚”结构，前端为两个独立 uni-app 项目
 - 后端为轻量 MVC 风格（`Controllers` / `Models` / `Utils`）
 - 当前仓库未内置自动化测试，可先通过接口联调与页面回归进行验证
-
-## License
-
-暂未声明（如需开源发布，建议补充 `LICENSE` 文件）。
