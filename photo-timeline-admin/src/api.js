@@ -110,6 +110,34 @@ export const fetchItems = (apiKey, page, limit, search = '') => {
 };
 
 /**
+ * 获取按 年/月 聚合后的动态总数（不受分页影响）
+ */
+export const fetchItemCounts = (apiKey, search = '') => {
+    return new Promise((resolve, reject) => {
+        let url = `${API_BASE}/items/counts`;
+        if (search) {
+            url += `?search=${encodeURIComponent(search)}`;
+        }
+
+        uni.request({
+            url,
+            method: 'GET',
+            header: { 'x-api-key': apiKey },
+            success: (res) => {
+                if (res.statusCode === 200) {
+                    resolve(res.data);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
+                } else {
+                    reject(new Error('加载失败'));
+                }
+            },
+            fail: (e) => reject(e)
+        });
+    });
+};
+
+/**
  * 创建时间轴条目
  */
 export const createItem = (apiKey, itemData) => {
@@ -274,14 +302,18 @@ export const emptyTrash = (apiKey) => {
  * @param {string} filePath
  * @param {File|null} fileObj
  * @param {{date?: string, latitude?: number, longitude?: number}|null} clientExif - 客户端提取的 EXIF
+ * @param {{skipThumb?: boolean}|null} options - 上传选项
  */
-export const uploadFile = (apiKey, filePath, fileObj = null, clientExif = null) => {
+export const uploadFile = (apiKey, filePath, fileObj = null, clientExif = null, options = null) => {
     // 将客户端 EXIF 数据作为 formData 字段发送
     const formData = {};
     if (clientExif) {
         if (clientExif.date) formData.exif_date = clientExif.date;
         if (clientExif.latitude != null) formData.exif_lat = String(clientExif.latitude);
         if (clientExif.longitude != null) formData.exif_lng = String(clientExif.longitude);
+    }
+    if (options && options.skipThumb) {
+        formData.skip_thumb = '1';
     }
 
     return new Promise((resolve, reject) => {

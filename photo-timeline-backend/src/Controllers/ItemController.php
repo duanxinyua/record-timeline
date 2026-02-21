@@ -135,12 +135,79 @@ class ItemController {
             // 依照原倒序 MAX(date) 排列
             foreach ($groups as $g) {
                 if (isset($grouped[$g['gid']])) {
+                    // 顶层 date 统一使用分组后的 MAX(date)，保证排序与前端分月口径一致
+                    $grouped[$g['gid']]['date'] = $g['gdate'];
                     $resultItems[] = $grouped[$g['gid']];
                 }
             }
         }
 
         HttpUtils::jsonResponse($resultItems);
+    }
+
+    /**
+     * 获取按 年/月 聚合后的动态总数（GET /items/counts）
+     */
+    public function getGroupCounts() {
+        $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+
+        $baseWhere = "deleted_at IS NULL";
+        $params = [];
+        if ($search !== '') {
+            $baseWhere .= " AND (title LIKE :search OR description LIKE :search OR address LIKE :search)";
+            $params[':search'] = "%{$search}%";
+        }
+
+        // 与 getList 一致：空 group_id 与 NULL 回退到 id，按“动态”计数
+        $gidExpr = "COALESCE(NULLIF(group_id, ''), CAST(id AS TEXT))";
+
+        $sql = "
+            SELECT
+                COALESCE(strftime('%Y', g.gdate), 'unknown') AS year_key,
+                COALESCE(strftime('%m', g.gdate), '00') AS month_num,
+                COUNT(*) AS total
+            FROM (
+                SELECT MAX(date) AS gdate
+                FROM timelineitem
+                WHERE {$baseWhere}
+                GROUP BY {$gidExpr}
+            ) g
+            GROUP BY year_key, month_num
+            ORDER BY year_key DESC, month_num DESC
+        ";
+
+        $rows = $this->model->query($sql, $params);
+        $yearCounts = [];
+        $monthCounts = [];
+
+        foreach ($rows as $row) {
+            $yearKey = (string)($row['year_key'] ?? 'unknown');
+            $monthNum = (string)($row['month_num'] ?? '00');
+            $total = (int)($row['total'] ?? 0);
+
+            if ($total <= 0) {
+                continue;
+            }
+
+            if (!isset($yearCounts[$yearKey])) {
+                $yearCounts[$yearKey] = 0;
+            }
+            $yearCounts[$yearKey] += $total;
+
+            if ($yearKey === 'unknown' || $monthNum === '00') {
+                $monthCounts['unknown:unknown-month'] = ($monthCounts['unknown:unknown-month'] ?? 0) + $total;
+                continue;
+            }
+
+            $monthKey = $yearKey . '-' . $monthNum;
+            $collapseKey = $yearKey . ':' . $monthKey;
+            $monthCounts[$collapseKey] = $total;
+        }
+
+        HttpUtils::jsonResponse([
+            'year_counts' => $yearCounts,
+            'month_counts' => $monthCounts,
+        ]);
     }
 
     /**

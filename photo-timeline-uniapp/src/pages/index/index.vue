@@ -51,50 +51,69 @@
                 <text>{{ appConfig.emptyText }}</text>
               </view>
 
-              <template v-for="group in groupedItems" :key="group.key">
-                <view class="month-header">
-                  <view class="month-dot"></view>
-                  <text class="month-title">{{ group.key }}</text>
-                </view>
-                <view
-                  v-for="item in group.items"
-                  :key="item.id"
-                  class="timeline-item"
-                >
-                  <view class="dot"></view>
-                  <view class="card">
-                    <view class="card-body">
-                      <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
-                      <text class="title" v-if="item.title">{{ item.title }}</text>
-                      <text class="description" v-if="item.description">{{ item.description }}</text>
-                    </view>
+              <template v-for="yearGroup in groupedItems" :key="yearGroup.key">
+                <view class="year-group">
+                  <view class="year-header collapse-header" @click="toggleYearCollapse(yearGroup.key)">
+                    <view class="year-dot"></view>
+                    <text class="year-title">{{ yearGroup.label }}</text>
+                    <text class="group-count">{{ yearGroup.displayCount }}</text>
+                    <text class="collapse-arrow">{{ isYearCollapsed(yearGroup.key) ? '▸' : '▾' }}</text>
+                  </view>
 
-                    <view class="media-list" v-if="item.media && item.media.length > 0">
-                      <view class="media-item" v-for="(m, mIndex) in item.media" :key="m.id || mIndex">
-                        <video
-                          v-if="isVideo(m.src)"
-                          class="photo"
-                          :src="m.src"
-                          controls
-                        ></video>
-                        <image
-                          v-else
-                          class="photo"
-                          :src="m.thumb || m.src"
-                          mode="aspectFill"
-                          lazy-load
-                          @click="previewImage(m.src, allImageUrls)"
-                        ></image>
-                        <view class="card-body-meta" v-if="m.taken_at || m.address || hasCoord(m.latitude, m.longitude)">
-                          <view class="meta-row" v-if="m.taken_at">
-                            <text class="meta-text">{{ appConfig.takenAtLabel }} {{ m.taken_at }}</text>
-                          </view>
-                          <view class="meta-row location" v-if="m.address || hasCoord(m.latitude, m.longitude)" @click.stop="openMap(m.latitude, m.longitude)">
-                            <text class="meta-text">{{ m.address || formatCoord(m.latitude, m.longitude) }}</text>
+                  <view class="year-body" v-if="!isYearCollapsed(yearGroup.key)">
+                    <template v-for="monthGroup in yearGroup.months" :key="monthGroup.collapseKey">
+                      <view class="month-group">
+                        <view class="month-header collapse-header" @click="toggleMonthCollapse(monthGroup.collapseKey)">
+                          <view class="month-dot"></view>
+                          <text class="month-title">{{ monthGroup.label }}</text>
+                          <text class="group-count">{{ monthGroup.displayCount }}</text>
+                          <text class="collapse-arrow">{{ isMonthCollapsed(monthGroup.collapseKey) ? '▸' : '▾' }}</text>
+                        </view>
+
+                        <view class="month-body" v-if="!isMonthCollapsed(monthGroup.collapseKey)">
+                          <view
+                            v-for="item in monthGroup.items"
+                            :key="item.id"
+                            class="timeline-item"
+                          >
+                            <view class="dot"></view>
+                            <view class="card">
+                              <view class="card-body">
+                                <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
+                                <text class="description" v-if="getItemDescription(item)">{{ getItemDescription(item) }}</text>
+                              </view>
+
+                              <view class="media-list" v-if="item.media && item.media.length > 0">
+                                <view class="media-item" v-for="(m, mIndex) in item.media" :key="m.id || mIndex">
+                                  <video
+                                    v-if="isVideo(m.src)"
+                                    class="photo"
+                                    :src="m.src"
+                                    controls
+                                  ></video>
+                                  <image
+                                    v-else
+                                    class="photo"
+                                    :src="m.thumb || m.src"
+                                    mode="aspectFill"
+                                    lazy-load
+                                    @click="openImagePreview(m.src)"
+                                  ></image>
+                                  <view class="card-body-meta" v-if="m.taken_at || m.address || hasCoord(m.latitude, m.longitude)">
+                                    <view class="meta-row" v-if="m.taken_at">
+                                      <text class="meta-text">{{ appConfig.takenAtLabel }} {{ m.taken_at }}</text>
+                                    </view>
+                                    <view class="meta-row location" v-if="m.address || hasCoord(m.latitude, m.longitude)" @click.stop="openMap(m.latitude, m.longitude)">
+                                      <text class="meta-text">{{ m.address || formatCoord(m.latitude, m.longitude) }}</text>
+                                    </view>
+                                  </view>
+                                </view>
+                              </view>
+                            </view>
                           </view>
                         </view>
                       </view>
-                    </view>
+                    </template>
                   </view>
                 </view>
               </template>
@@ -162,6 +181,28 @@
         </view>
       </view>
     </view>
+
+    <view class="image-preview-overlay" v-if="showImagePreview">
+      <swiper
+        class="image-preview-swiper"
+        :current="previewCurrent"
+        circular
+        @change="onPreviewChange"
+      >
+        <swiper-item v-for="(url, index) in previewList" :key="`${url}-${index}`">
+          <view class="image-preview-item">
+            <image
+              v-if="shouldRenderPreviewImage(index)"
+              class="image-preview-image"
+              :src="url"
+              mode="aspectFit"
+              lazy-load
+            ></image>
+          </view>
+        </swiper-item>
+      </swiper>
+      <view class="image-preview-close" @click="closeImagePreview">✕</view>
+    </view>
   </view>
 </template>
 
@@ -182,6 +223,15 @@ const formatCoord = (lat, lng) => {
     const latDir = lat >= 0 ? 'N' : 'S';
     const lngDir = lng >= 0 ? 'E' : 'W';
     return `${Math.abs(lat).toFixed(4)}°${latDir}, ${Math.abs(lng).toFixed(4)}°${lngDir}`;
+};
+
+const getItemDescription = (item) => {
+    if (!item || typeof item !== 'object') return '';
+    const description = (item.description ?? '').toString().trim();
+    if (description) return description;
+    const title = (item.title ?? '').toString().trim();
+    if (title) return title;
+    return '';
 };
 
 const openMap = (lat, lng) => {
@@ -244,6 +294,13 @@ const backTopInlineStyle = computed(() => ({
     left: `${backTopLeft.value}px`,
     top: `${backTopTop.value}px`
 }));
+const showImagePreview = ref(false);
+const previewCurrent = ref(0);
+const previewList = ref([]);
+const collapsedYears = ref({});
+const collapsedMonths = ref({});
+const yearCountMap = ref({});
+const monthCountMap = ref({});
 
 const getTouchXY = (e) => {
     const touch = (e && e.touches && e.touches[0]) || (e && e.changedTouches && e.changedTouches[0]);
@@ -313,28 +370,197 @@ const onBackTopTouchEnd = () => {
     backTopDrag.active = false;
 };
 
-// 按年月分组
+// 按 年 -> 月 分组（支持折叠）
 const groupedItems = computed(() => {
-    const groups = [];
-    let currentKey = '';
+    const yearGroups = [];
+    const yearMap = new Map();
+
     for (const item of items.value) {
         const date = new Date(item.date);
-        const key = isNaN(date.getTime()) ? '未知时间' : `${date.getFullYear()}年${date.getMonth() + 1}月`;
-        if (key !== currentKey) {
-            groups.push({ key, items: [item] });
-            currentKey = key;
+        const isValid = !isNaN(date.getTime());
+        const yearKey = isValid ? String(date.getFullYear()) : 'unknown';
+        const yearLabel = isValid ? `${date.getFullYear()}年` : '未知年份';
+        const monthValue = isValid ? date.getMonth() + 1 : 0;
+        const monthKey = isValid
+            ? `${date.getFullYear()}-${String(monthValue).padStart(2, '0')}`
+            : 'unknown-month';
+        const monthLabel = isValid ? `${monthValue}月` : '未知时间';
+
+        let yearGroup = yearMap.get(yearKey);
+        if (!yearGroup) {
+            yearGroup = { key: yearKey, label: yearLabel, count: 0, displayCount: 0, months: [] };
+            yearMap.set(yearKey, yearGroup);
+            yearGroups.push(yearGroup);
+        }
+        yearGroup.count += 1;
+
+        const lastMonth = yearGroup.months[yearGroup.months.length - 1];
+        if (!lastMonth || lastMonth.key !== monthKey) {
+            yearGroup.months.push({
+                key: monthKey,
+                collapseKey: `${yearKey}:${monthKey}`,
+                label: monthLabel,
+                count: 1,
+                displayCount: 1,
+                items: [item]
+            });
         } else {
-            groups[groups.length - 1].items.push(item);
+            lastMonth.items.push(item);
+            lastMonth.count += 1;
         }
     }
-    return groups;
+
+    for (const yearGroup of yearGroups) {
+        const yearRaw = yearCountMap.value[yearGroup.key];
+        const yearTotal = Number(yearRaw);
+        yearGroup.displayCount = Number.isFinite(yearTotal) ? yearTotal : yearGroup.count;
+
+        for (const monthGroup of yearGroup.months) {
+            const monthRaw = monthCountMap.value[monthGroup.collapseKey];
+            const monthTotal = Number(monthRaw);
+            monthGroup.displayCount = Number.isFinite(monthTotal) ? monthTotal : monthGroup.count;
+        }
+    }
+
+    return yearGroups;
 });
 
-// 所有图片 URL（用于全屏滑动浏览）
-const allImageUrls = computed(() => {
-    let urls = [];
+const MIN_EXPANDED_ITEMS = 5;
+
+const getItemMonthMeta = (item) => {
+    if (!item || !item.date) {
+        return { yearKey: 'unknown', monthKey: 'unknown-month', collapseKey: 'unknown:unknown-month', year: 0, month: 0, valid: false };
+    }
+    const date = new Date(item.date);
+    if (isNaN(date.getTime())) {
+        return { yearKey: 'unknown', monthKey: 'unknown-month', collapseKey: 'unknown:unknown-month', year: 0, month: 0, valid: false };
+    }
+
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const yearKey = String(year);
+    const monthKey = `${yearKey}-${String(month).padStart(2, '0')}`;
+    return {
+        yearKey,
+        monthKey,
+        collapseKey: `${yearKey}:${monthKey}`,
+        year,
+        month,
+        valid: true
+    };
+};
+
+const getPrevMonthMeta = (year, month) => {
+    if (!year || !month) return null;
+    let targetYear = year;
+    let targetMonth = month - 1;
+    if (targetMonth <= 0) {
+        targetYear -= 1;
+        targetMonth = 12;
+    }
+    const yearKey = String(targetYear);
+    const monthKey = `${yearKey}-${String(targetMonth).padStart(2, '0')}`;
+    return {
+        yearKey,
+        monthKey,
+        collapseKey: `${yearKey}:${monthKey}`
+    };
+};
+
+const getInitialMonthStats = () => {
+    if (!items.value.length) return null;
+
+    const current = getItemMonthMeta(items.value[0]);
+    const prev = current.valid ? getPrevMonthMeta(current.year, current.month) : null;
+    let currentCount = 0;
+    let prevCount = 0;
+
     for (const item of items.value) {
-        if (item.media) {
+        const meta = getItemMonthMeta(item);
+        if (meta.monthKey === current.monthKey) {
+            currentCount += 1;
+        } else if (prev && meta.monthKey === prev.monthKey) {
+            prevCount += 1;
+        }
+    }
+
+    return { current, prev, currentCount, prevCount };
+};
+
+const applyDefaultCollapseState = () => {
+    const years = {};
+    const months = {};
+    for (const yearGroup of groupedItems.value) {
+        years[yearGroup.key] = true;
+        for (const monthGroup of yearGroup.months) {
+            months[monthGroup.collapseKey] = true;
+        }
+    }
+
+    const stats = getInitialMonthStats();
+    if (stats) {
+        years[stats.current.yearKey] = false;
+        months[stats.current.collapseKey] = false;
+
+        if (stats.currentCount < MIN_EXPANDED_ITEMS && stats.prev && stats.prevCount > 0) {
+            years[stats.prev.yearKey] = false;
+            months[stats.prev.collapseKey] = false;
+        }
+    }
+
+    collapsedYears.value = years;
+    collapsedMonths.value = months;
+};
+
+const syncCollapseStateForNewGroups = () => {
+    let yearsChanged = false;
+    let monthsChanged = false;
+    const years = { ...collapsedYears.value };
+    const months = { ...collapsedMonths.value };
+
+    for (const yearGroup of groupedItems.value) {
+        if (!(yearGroup.key in years)) {
+            years[yearGroup.key] = true;
+            yearsChanged = true;
+        }
+        for (const monthGroup of yearGroup.months) {
+            if (!(monthGroup.collapseKey in months)) {
+                months[monthGroup.collapseKey] = true;
+                monthsChanged = true;
+            }
+        }
+    }
+
+    if (yearsChanged) collapsedYears.value = years;
+    if (monthsChanged) collapsedMonths.value = months;
+};
+
+const resetGroupCountMaps = () => {
+    yearCountMap.value = {};
+    monthCountMap.value = {};
+};
+
+const isYearCollapsed = (yearKey) => !!collapsedYears.value[yearKey];
+const isMonthCollapsed = (monthKey) => !!collapsedMonths.value[monthKey];
+
+const toggleYearCollapse = (yearKey) => {
+    collapsedYears.value = {
+        ...collapsedYears.value,
+        [yearKey]: !isYearCollapsed(yearKey)
+    };
+};
+
+const toggleMonthCollapse = (monthKey) => {
+    collapsedMonths.value = {
+        ...collapsedMonths.value,
+        [monthKey]: !isMonthCollapsed(monthKey)
+    };
+};
+
+const allImageUrls = computed(() => {
+    const urls = [];
+    for (const item of items.value) {
+        if (Array.isArray(item.media)) {
             urls.push(...item.media.filter(m => !isVideo(m.src)).map(m => m.src));
         } else if (item.src && !isVideo(item.src)) {
             urls.push(item.src);
@@ -342,6 +568,43 @@ const allImageUrls = computed(() => {
     }
     return urls;
 });
+
+const openImagePreview = (url) => {
+    const urls = allImageUrls.value;
+    const currentIndex = urls.indexOf(url);
+
+    if (currentIndex < 0) {
+        previewImage(url);
+        return;
+    }
+
+    previewList.value = urls;
+    previewCurrent.value = currentIndex;
+    showImagePreview.value = true;
+};
+
+const closeImagePreview = () => {
+    showImagePreview.value = false;
+    previewList.value = [];
+    previewCurrent.value = 0;
+};
+
+const onPreviewChange = (e) => {
+    const index = Number((e && e.detail && e.detail.current) || 0);
+    previewCurrent.value = Number.isNaN(index) ? 0 : index;
+};
+
+const shouldRenderPreviewImage = (index) => {
+    const total = previewList.value.length;
+    const current = previewCurrent.value;
+    if (total <= 1) return true;
+
+    if (Math.abs(index - current) <= 1) return true;
+    if (current === 0 && index === total - 1) return true;
+    if (current === total - 1 && index === 0) return true;
+
+    return false;
+};
 
 // 加载配置
 const loadConfig = async () => {
@@ -358,6 +621,50 @@ const loadConfig = async () => {
 };
 
 // 加载条目（支持分页）
+const loadGroupCounts = async () => {
+    try {
+        const data = await api.fetchItemCounts(viewerKey.value, searchQuery.value);
+        yearCountMap.value = (data && data.year_counts) || {};
+        monthCountMap.value = (data && data.month_counts) || {};
+    } catch (e) {
+        resetGroupCountMaps();
+    }
+};
+
+const appendNextPage = async (limit) => {
+    const data = await api.fetchItems(viewerKey.value, page.value, limit, searchQuery.value);
+    const newItems = data.items || data;
+    if (!Array.isArray(newItems)) {
+        hasMore.value = false;
+        return 0;
+    }
+
+    if (newItems.length < limit) {
+        hasMore.value = false;
+    }
+
+    if (newItems.length > 0) {
+        items.value = [...items.value, ...newItems];
+        page.value += 1;
+    }
+
+    return newItems.length;
+};
+
+const ensureMonthQuotaForDefaultView = async (limit) => {
+    while (hasMore.value) {
+        const stats = getInitialMonthStats();
+        if (!stats) break;
+
+        // 当前月不足 5 条时，继续拉取直到“当前月 + 上一月”至少 5 条
+        if (stats.currentCount >= MIN_EXPANDED_ITEMS) break;
+        if ((stats.currentCount + stats.prevCount) >= MIN_EXPANDED_ITEMS) break;
+
+        const loaded = await appendNextPage(limit);
+        if (loaded <= 0) break;
+    }
+};
+
 const load = async (isRefresh = true) => {
     if (isLoading.value) return;
 
@@ -366,6 +673,7 @@ const load = async (isRefresh = true) => {
         hasMore.value = true;
         items.value = [];
         showBackTop.value = false;
+        resetGroupCountMaps();
     }
 
     if (!hasMore.value) return;
@@ -374,15 +682,17 @@ const load = async (isRefresh = true) => {
     const limit = appConfig.pageSize && Number(appConfig.pageSize) > 0 ? Number(appConfig.pageSize) : 5;
 
     try {
-        const data = await api.fetchItems(viewerKey.value, page.value, limit, searchQuery.value);
-        // 后端分页返回 { items, total, page, limit }
-        const newItems = data.items || data;
-        if (Array.isArray(newItems)) {
-            if (newItems.length < limit) {
-                hasMore.value = false;
-            }
-            items.value = [...items.value, ...newItems];
-            page.value++;
+        if (isRefresh) {
+            await loadGroupCounts();
+        }
+
+        await appendNextPage(limit);
+
+        if (isRefresh) {
+            await ensureMonthQuotaForDefaultView(limit);
+            applyDefaultCollapseState();
+        } else {
+            syncCollapseStateForNewGroups();
         }
     } catch (e) {
         uni.showToast({ title: '加载失败', icon: 'none' });
@@ -759,8 +1069,62 @@ onMounted(async () => {
 .timeline-track {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 30px;
   padding-left: 0;
+}
+
+.year-group,
+.year-body,
+.month-group,
+.month-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.year-group {
+  gap: 18px;
+}
+
+.year-body {
+  gap: 20px;
+}
+
+.month-group {
+  gap: 16px;
+}
+
+.month-body {
+  gap: 24px;
+}
+
+.collapse-header {
+  user-select: none;
+}
+
+.year-header {
+  position: relative;
+  padding-left: 60px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.year-dot {
+  position: absolute;
+  left: 15px;
+  width: 22px;
+  height: 22px;
+  background: var(--ink);
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(93, 64, 55, 0.28);
+  z-index: 2;
+}
+
+.year-title {
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .month-header {
@@ -768,6 +1132,7 @@ onMounted(async () => {
   padding-left: 60px;
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .month-dot {
@@ -787,6 +1152,17 @@ onMounted(async () => {
   font-weight: 700;
   color: var(--ink);
   letter-spacing: 0.02em;
+}
+
+.group-count {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.collapse-arrow {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
 .empty {
@@ -1042,6 +1418,47 @@ onMounted(async () => {
 
 .auth-modal-footer .btn {
     flex: 1;
+}
+
+.image-preview-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 13000;
+}
+
+.image-preview-swiper {
+    width: 100%;
+    height: 100%;
+}
+
+.image-preview-item {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.image-preview-image {
+    width: 100%;
+    height: 100%;
+}
+
+.image-preview-close {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    z-index: 13001;
 }
 
 .back-top-btn {

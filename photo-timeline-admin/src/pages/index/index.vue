@@ -28,14 +28,6 @@
           </view>
         </view>
         <view class="field">
-          <text class="label-text">标题（可选）</text>
-          <input
-            class="uni-input"
-            v-model="captionValue"
-            placeholder="例如：毕业旅行 / 项目发布"
-          />
-        </view>
-        <view class="field">
           <text class="label-text">说点什么（可选）</text>
           <textarea
             class="uni-textarea"
@@ -174,62 +166,81 @@
                 <text>{{ appConfig.emptyText }}</text>
               </view>
 
-              <template v-for="group in groupedItems" :key="group.key">
-                <view class="month-header">
-                  <view class="month-dot"></view>
-                  <text class="month-title">{{ group.key }}</text>
-                </view>
-                <view
-                  v-for="item in group.items"
-                  :key="item.id"
-                  class="timeline-item"
-                >
-                  <view class="dot"></view>
-                  <view class="card">
-                    <view class="card-body">
-                      <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
-                      <text class="title" v-if="item.title">{{ item.title }}</text>
-                      <text class="description" v-if="item.description">{{ item.description }}</text>
-                    </view>
+              <template v-for="yearGroup in groupedItems" :key="yearGroup.key">
+                <view class="year-group">
+                  <view class="year-header collapse-header" @click="toggleYearCollapse(yearGroup.key)">
+                    <view class="year-dot"></view>
+                    <text class="year-title">{{ yearGroup.label }}</text>
+                    <text class="group-count">{{ yearGroup.displayCount }}</text>
+                    <text class="collapse-arrow">{{ isYearCollapsed(yearGroup.key) ? '▸' : '▾' }}</text>
+                  </view>
 
-                    <view class="media-list" v-if="item.media && item.media.length > 0">
-                      <view class="media-item" v-for="(m, mIndex) in item.media" :key="m.id || mIndex">
-                        <video
-                          v-if="isVideo(m.src) && !showSettingsModal && !showEditModal"
-                          class="photo"
-                          :src="m.src"
-                          controls
-                        ></video>
-                        <view v-else-if="isVideo(m.src)" class="photo video-placeholder">
-                          <text style="color: #fff;">📹</text>
+                  <view class="year-body" v-if="!isYearCollapsed(yearGroup.key)">
+                    <template v-for="monthGroup in yearGroup.months" :key="monthGroup.collapseKey">
+                      <view class="month-group">
+                        <view class="month-header collapse-header" @click="toggleMonthCollapse(monthGroup.collapseKey)">
+                          <view class="month-dot"></view>
+                          <text class="month-title">{{ monthGroup.label }}</text>
+                          <text class="group-count">{{ monthGroup.displayCount }}</text>
+                          <text class="collapse-arrow">{{ isMonthCollapsed(monthGroup.collapseKey) ? '▸' : '▾' }}</text>
                         </view>
-                        <image
-                          v-else
-                          class="photo"
-                          :src="m.thumb || m.src"
-                          mode="aspectFill"
-                          lazy-load
-                          @click="previewImage(m.src, allImageUrls)"
-                        ></image>
-                        <view class="card-body-meta" v-if="m.taken_at || m.address || hasCoord(m.latitude, m.longitude)">
-                          <view class="meta-row" v-if="m.taken_at">
-                            <text class="meta-text">{{ appConfig.takenAtLabel }} {{ m.taken_at }}</text>
-                          </view>
-                          <view class="meta-row location" v-if="m.address || hasCoord(m.latitude, m.longitude)" @click.stop="openMap(m.latitude, m.longitude)">
-                            <text class="meta-text">{{ m.address || formatCoord(m.latitude, m.longitude) }}</text>
-                          </view>
-                        </view>
-                      </view>
-                    </view>
 
-                    <view class="card-actions" v-if="isAdmin">
-                      <view class="action-btn" @click.stop="openEdit(item)">
-                        <text class="action-icon">✏️</text>
+                        <view class="month-body" v-if="!isMonthCollapsed(monthGroup.collapseKey)">
+                          <view
+                            v-for="item in monthGroup.items"
+                            :key="item.id"
+                            class="timeline-item"
+                          >
+                            <view class="dot"></view>
+                            <view class="card">
+                              <view class="card-body">
+                                <text class="date">{{ formatDate(item.date, appConfig.unknownDateText) }}</text>
+                                <text class="description" v-if="getItemDescription(item)">{{ getItemDescription(item) }}</text>
+                              </view>
+
+                              <view class="media-list" v-if="item.media && item.media.length > 0">
+                                <view class="media-item" v-for="(m, mIndex) in item.media" :key="m.id || mIndex">
+                                  <video
+                                    v-if="isVideo(m.src) && !showSettingsModal && !showEditModal"
+                                    class="photo"
+                                    :src="m.src"
+                                    controls
+                                  ></video>
+                                  <view v-else-if="isVideo(m.src)" class="photo video-placeholder">
+                                    <text style="color: #fff;">📹</text>
+                                  </view>
+                                  <image
+                                    v-else
+                                    class="photo"
+                                    :src="m.thumb || m.src"
+                                    mode="aspectFill"
+                                    lazy-load
+                                    @click="openImagePreview(m.src)"
+                                  ></image>
+                                  <view class="card-body-meta" v-if="m.taken_at || m.address || hasCoord(m.latitude, m.longitude)">
+                                    <view class="meta-row" v-if="m.taken_at">
+                                      <text class="meta-text">{{ appConfig.takenAtLabel }} {{ m.taken_at }}</text>
+                                    </view>
+                                    <view class="meta-row location" v-if="m.address || hasCoord(m.latitude, m.longitude)" @click.stop="openMap(m.latitude, m.longitude)">
+                                      <text class="meta-text">{{ m.address || formatCoord(m.latitude, m.longitude) }}</text>
+                                    </view>
+                                  </view>
+                                </view>
+                              </view>
+
+                              <view class="card-actions" v-if="isAdmin">
+                                <view class="action-btn" @click.stop="openEdit(item)">
+                                  <text class="action-icon">✏️</text>
+                                </view>
+                                <view class="action-btn danger" @click.stop="confirmDelete(item.id)">
+                                  <text class="action-icon">🗑️</text>
+                                </view>
+                              </view>
+                            </view>
+                          </view>
+                        </view>
                       </view>
-                      <view class="action-btn danger" @click.stop="confirmDelete(item.id)">
-                        <text class="action-icon">🗑️</text>
-                      </view>
-                    </view>
+                    </template>
                   </view>
                 </view>
               </template>
@@ -377,11 +388,7 @@
             </view>
             <view class="modal-body">
                 <view class="field">
-                    <text class="label-text">标题</text>
-                    <input class="uni-input" v-model="editItemData.title" placeholder="照片标题" />
-                </view>
-                <view class="field">
-                    <text class="label-text">说点什么</text>
+                    <text class="label-text">备注内容</text>
                     <textarea class="uni-textarea" v-model="editItemData.description" placeholder="记录当时的心情..." :maxlength="500" auto-height />
                 </view>
                 <view class="field">
@@ -426,7 +433,7 @@
                             <text style="color: #fff; font-size: 1.2rem;">📹</text>
                         </view>
                         <view class="trash-info">
-                            <text class="trash-title">{{ item.title || '未命名' }}</text>
+                            <text class="trash-title">{{ getItemDescription(item) || '未命名' }}</text>
                             <text class="trash-date">删除于 {{ formatDate(item.deleted_at) }}</text>
                         </view>
                         <view class="trash-actions">
@@ -444,6 +451,46 @@
                 <button class="btn danger-btn" @click="handleEmptyTrash">清空回收站 ({{ trashItems.length }})</button>
             </view>
         </view>
+    </view>
+
+    <view class="modal-overlay confirm-overlay" v-if="showConfirmModal">
+        <view class="modal-content confirm-modal">
+            <view class="modal-header">
+                <text class="modal-title">{{ confirmDialog.title }}</text>
+                <view class="close-btn" @click="closeConfirmDialog" v-if="!confirmLoading">✕</view>
+            </view>
+            <view class="modal-body confirm-body">
+                <text class="confirm-text">{{ confirmDialog.content }}</text>
+            </view>
+            <view class="modal-footer confirm-footer">
+                <button class="btn ghost" @click="closeConfirmDialog" :disabled="confirmLoading">取消</button>
+                <button class="btn danger-btn" @click="submitConfirmDialog" :disabled="confirmLoading">
+                    {{ confirmLoading ? '处理中...' : confirmDialog.confirmText }}
+                </button>
+            </view>
+        </view>
+    </view>
+
+    <view class="image-preview-overlay" v-if="showImagePreview">
+        <swiper
+            class="image-preview-swiper"
+            :current="previewCurrent"
+            circular
+            @change="onPreviewChange"
+        >
+            <swiper-item v-for="(url, index) in previewList" :key="`${url}-${index}`">
+                <view class="image-preview-item">
+                    <image
+                        v-if="shouldRenderPreviewImage(index)"
+                        class="image-preview-image"
+                        :src="url"
+                        mode="aspectFit"
+                        lazy-load
+                    ></image>
+                </view>
+            </swiper-item>
+        </swiper>
+        <view class="image-preview-close" @click="closeImagePreview">✕</view>
     </view>
   </view>
 </template>
@@ -481,7 +528,6 @@ const authLoading = ref(false);
 
 const dateValue = ref('');
 const timeValue = ref('');
-const captionValue = ref('');
 const descriptionValue = ref('');
 const items = ref([]);
 const batchList = ref([]);
@@ -511,6 +557,13 @@ const backTopInlineStyle = computed(() => ({
     left: `${backTopLeft.value}px`,
     top: `${backTopTop.value}px`
 }));
+const showImagePreview = ref(false);
+const previewCurrent = ref(0);
+const previewList = ref([]);
+const collapsedYears = ref({});
+const collapsedMonths = ref({});
+const yearCountMap = ref({});
+const monthCountMap = ref({});
 
 const getTouchXY = (e) => {
     const touch = (e && e.touches && e.touches[0]) || (e && e.changedTouches && e.changedTouches[0]);
@@ -582,28 +635,197 @@ const onBackTopTouchEnd = () => {
 
 const isAdmin = computed(() => !!adminKey.value);
 
-// 按年月分组
+// 按 年 -> 月 分组（支持折叠）
 const groupedItems = computed(() => {
-    const groups = [];
-    let currentKey = '';
+    const yearGroups = [];
+    const yearMap = new Map();
+
     for (const item of items.value) {
         const date = new Date(item.date);
-        const key = isNaN(date.getTime()) ? '未知时间' : `${date.getFullYear()}年${date.getMonth() + 1}月`;
-        if (key !== currentKey) {
-            groups.push({ key, items: [item] });
-            currentKey = key;
+        const isValid = !isNaN(date.getTime());
+        const yearKey = isValid ? String(date.getFullYear()) : 'unknown';
+        const yearLabel = isValid ? `${date.getFullYear()}年` : '未知年份';
+        const monthValue = isValid ? date.getMonth() + 1 : 0;
+        const monthKey = isValid
+            ? `${date.getFullYear()}-${String(monthValue).padStart(2, '0')}`
+            : 'unknown-month';
+        const monthLabel = isValid ? `${monthValue}月` : '未知时间';
+
+        let yearGroup = yearMap.get(yearKey);
+        if (!yearGroup) {
+            yearGroup = { key: yearKey, label: yearLabel, count: 0, displayCount: 0, months: [] };
+            yearMap.set(yearKey, yearGroup);
+            yearGroups.push(yearGroup);
+        }
+        yearGroup.count += 1;
+
+        const lastMonth = yearGroup.months[yearGroup.months.length - 1];
+        if (!lastMonth || lastMonth.key !== monthKey) {
+            yearGroup.months.push({
+                key: monthKey,
+                collapseKey: `${yearKey}:${monthKey}`,
+                label: monthLabel,
+                count: 1,
+                displayCount: 1,
+                items: [item]
+            });
         } else {
-            groups[groups.length - 1].items.push(item);
+            lastMonth.items.push(item);
+            lastMonth.count += 1;
         }
     }
-    return groups;
+
+    for (const yearGroup of yearGroups) {
+        const yearRaw = yearCountMap.value[yearGroup.key];
+        const yearTotal = Number(yearRaw);
+        yearGroup.displayCount = Number.isFinite(yearTotal) ? yearTotal : yearGroup.count;
+
+        for (const monthGroup of yearGroup.months) {
+            const monthRaw = monthCountMap.value[monthGroup.collapseKey];
+            const monthTotal = Number(monthRaw);
+            monthGroup.displayCount = Number.isFinite(monthTotal) ? monthTotal : monthGroup.count;
+        }
+    }
+
+    return yearGroups;
 });
 
-// 所有图片 URL（用于全屏滑动浏览）
-const allImageUrls = computed(() => {
-    let urls = [];
+const MIN_EXPANDED_ITEMS = 5;
+
+const getItemMonthMeta = (item) => {
+    if (!item || !item.date) {
+        return { yearKey: 'unknown', monthKey: 'unknown-month', collapseKey: 'unknown:unknown-month', year: 0, month: 0, valid: false };
+    }
+    const date = new Date(item.date);
+    if (isNaN(date.getTime())) {
+        return { yearKey: 'unknown', monthKey: 'unknown-month', collapseKey: 'unknown:unknown-month', year: 0, month: 0, valid: false };
+    }
+
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const yearKey = String(year);
+    const monthKey = `${yearKey}-${String(month).padStart(2, '0')}`;
+    return {
+        yearKey,
+        monthKey,
+        collapseKey: `${yearKey}:${monthKey}`,
+        year,
+        month,
+        valid: true
+    };
+};
+
+const getPrevMonthMeta = (year, month) => {
+    if (!year || !month) return null;
+    let targetYear = year;
+    let targetMonth = month - 1;
+    if (targetMonth <= 0) {
+        targetYear -= 1;
+        targetMonth = 12;
+    }
+    const yearKey = String(targetYear);
+    const monthKey = `${yearKey}-${String(targetMonth).padStart(2, '0')}`;
+    return {
+        yearKey,
+        monthKey,
+        collapseKey: `${yearKey}:${monthKey}`
+    };
+};
+
+const getInitialMonthStats = () => {
+    if (!items.value.length) return null;
+
+    const current = getItemMonthMeta(items.value[0]);
+    const prev = current.valid ? getPrevMonthMeta(current.year, current.month) : null;
+    let currentCount = 0;
+    let prevCount = 0;
+
     for (const item of items.value) {
-        if (item.media) {
+        const meta = getItemMonthMeta(item);
+        if (meta.monthKey === current.monthKey) {
+            currentCount += 1;
+        } else if (prev && meta.monthKey === prev.monthKey) {
+            prevCount += 1;
+        }
+    }
+
+    return { current, prev, currentCount, prevCount };
+};
+
+const applyDefaultCollapseState = () => {
+    const years = {};
+    const months = {};
+    for (const yearGroup of groupedItems.value) {
+        years[yearGroup.key] = true;
+        for (const monthGroup of yearGroup.months) {
+            months[monthGroup.collapseKey] = true;
+        }
+    }
+
+    const stats = getInitialMonthStats();
+    if (stats) {
+        years[stats.current.yearKey] = false;
+        months[stats.current.collapseKey] = false;
+
+        if (stats.currentCount < MIN_EXPANDED_ITEMS && stats.prev && stats.prevCount > 0) {
+            years[stats.prev.yearKey] = false;
+            months[stats.prev.collapseKey] = false;
+        }
+    }
+
+    collapsedYears.value = years;
+    collapsedMonths.value = months;
+};
+
+const syncCollapseStateForNewGroups = () => {
+    let yearsChanged = false;
+    let monthsChanged = false;
+    const years = { ...collapsedYears.value };
+    const months = { ...collapsedMonths.value };
+
+    for (const yearGroup of groupedItems.value) {
+        if (!(yearGroup.key in years)) {
+            years[yearGroup.key] = true;
+            yearsChanged = true;
+        }
+        for (const monthGroup of yearGroup.months) {
+            if (!(monthGroup.collapseKey in months)) {
+                months[monthGroup.collapseKey] = true;
+                monthsChanged = true;
+            }
+        }
+    }
+
+    if (yearsChanged) collapsedYears.value = years;
+    if (monthsChanged) collapsedMonths.value = months;
+};
+
+const resetGroupCountMaps = () => {
+    yearCountMap.value = {};
+    monthCountMap.value = {};
+};
+
+const isYearCollapsed = (yearKey) => !!collapsedYears.value[yearKey];
+const isMonthCollapsed = (monthKey) => !!collapsedMonths.value[monthKey];
+
+const toggleYearCollapse = (yearKey) => {
+    collapsedYears.value = {
+        ...collapsedYears.value,
+        [yearKey]: !isYearCollapsed(yearKey)
+    };
+};
+
+const toggleMonthCollapse = (monthKey) => {
+    collapsedMonths.value = {
+        ...collapsedMonths.value,
+        [monthKey]: !isMonthCollapsed(monthKey)
+    };
+};
+
+const allImageUrls = computed(() => {
+    const urls = [];
+    for (const item of items.value) {
+        if (Array.isArray(item.media)) {
             urls.push(...item.media.filter(m => !isVideo(m.src)).map(m => m.src));
         } else if (item.src && !isVideo(item.src)) {
             urls.push(item.src);
@@ -611,6 +833,45 @@ const allImageUrls = computed(() => {
     }
     return urls;
 });
+
+const openImagePreview = (url) => {
+    const urls = allImageUrls.value;
+    const currentIndex = urls.indexOf(url);
+
+    if (currentIndex < 0) {
+        previewImage(url);
+        return;
+    }
+
+    previewList.value = urls;
+    previewCurrent.value = currentIndex;
+    showImagePreview.value = true;
+};
+
+const closeImagePreview = () => {
+    showImagePreview.value = false;
+    previewList.value = [];
+    previewCurrent.value = 0;
+};
+
+const onPreviewChange = (e) => {
+    const index = Number((e && e.detail && e.detail.current) || 0);
+    previewCurrent.value = Number.isNaN(index) ? 0 : index;
+};
+
+const shouldRenderPreviewImage = (index) => {
+    const total = previewList.value.length;
+    const current = previewCurrent.value;
+    if (total <= 1) return true;
+
+    if (Math.abs(index - current) <= 1) return true;
+
+    // circular 模式下首尾也认为是相邻项
+    if (current === 0 && index === total - 1) return true;
+    if (current === total - 1 && index === 0) return true;
+
+    return false;
+};
 
 // ==================== 日期选择 ====================
 
@@ -629,6 +890,15 @@ const formatCoord = (lat, lng) => {
     const latDir = lat >= 0 ? 'N' : 'S';
     const lngDir = lng >= 0 ? 'E' : 'W';
     return `${Math.abs(lat).toFixed(4)}°${latDir}, ${Math.abs(lng).toFixed(4)}°${lngDir}`;
+};
+
+const getItemDescription = (item) => {
+    if (!item || typeof item !== 'object') return '';
+    const description = (item.description ?? '').toString().trim();
+    if (description) return description;
+    const title = (item.title ?? '').toString().trim();
+    if (title) return title;
+    return '';
 };
 
 const openMap = (lat, lng) => {
@@ -746,7 +1016,7 @@ const handleBatchUpload = async (filePaths) => {
                             let frameUrl = '';
                             try {
                                 frameUrl = URL.createObjectURL(frameFile);
-                                const thumbData = await api.uploadFile(adminKey.value, frameUrl, frameFile);
+                                const thumbData = await api.uploadFile(adminKey.value, frameUrl, frameFile, null, { skipThumb: true });
                                 data.thumb = thumbData.url;
                             } catch (e) {
                                 // 截帧上传失败不影响主流程
@@ -867,8 +1137,8 @@ const addItems = async () => {
 
             const newItem = {
                 date: itemDate.toISOString(),
-                title: (i === 0) ? (captionValue.value || item.name.replace(/\.[^/.]+$/, "")) : '',
-                description: (i === 0) ? (descriptionValue.value || null) : null,
+                title: '',
+                description: (i === 0) ? ((descriptionValue.value || item.name.replace(/\.[^/.]+$/, "")).trim() || null) : null,
                 src: item.src,
                 thumb: item.thumb,
                 latitude: item.exif ? item.exif.latitude : null,
@@ -881,7 +1151,6 @@ const addItems = async () => {
         }
 
         uni.showToast({ title: '全部发布成功', icon: 'success' });
-        captionValue.value = '';
         descriptionValue.value = '';
         batchList.value = [];
         
@@ -923,6 +1192,52 @@ const confirmDelete = (id) => {
 
 const showTrashModal = ref(false);
 const trashItems = ref([]);
+const showConfirmModal = ref(false);
+const confirmLoading = ref(false);
+const confirmDialog = reactive({
+    title: '',
+    content: '',
+    confirmText: '确认',
+    onConfirm: null
+});
+
+const resetConfirmDialog = () => {
+    showConfirmModal.value = false;
+    confirmLoading.value = false;
+    confirmDialog.title = '';
+    confirmDialog.content = '';
+    confirmDialog.confirmText = '确认';
+    confirmDialog.onConfirm = null;
+};
+
+const openConfirmDialog = ({ title, content, confirmText = '确认', onConfirm }) => {
+    confirmDialog.title = title;
+    confirmDialog.content = content;
+    confirmDialog.confirmText = confirmText;
+    confirmDialog.onConfirm = onConfirm;
+    showConfirmModal.value = true;
+};
+
+const closeConfirmDialog = () => {
+    if (confirmLoading.value) return;
+    resetConfirmDialog();
+};
+
+const submitConfirmDialog = async () => {
+    if (confirmLoading.value) return;
+    if (typeof confirmDialog.onConfirm !== 'function') {
+        resetConfirmDialog();
+        return;
+    }
+
+    confirmLoading.value = true;
+    try {
+        await confirmDialog.onConfirm();
+        resetConfirmDialog();
+    } catch (e) {
+        confirmLoading.value = false;
+    }
+};
 
 const refreshTrash = async () => {
     const data = await api.fetchTrash(adminKey.value);
@@ -952,38 +1267,38 @@ const handleRestore = async (id) => {
 };
 
 const handlePermanentDelete = (id) => {
-    uni.showModal({
+    openConfirmDialog({
         title: '⚠️ 彻底删除',
         content: '文件将永久删除且不可恢复，确定吗？',
-        success: async (res) => {
-            if (res.confirm) {
-                try {
-                    await api.permanentDeleteItem(adminKey.value, id);
-                    await refreshTrash();
-                    await load(true);
-                    uni.showToast({ title: '已彻底删除', icon: 'none' });
-                } catch (e) {
-                    uni.showToast({ title: '删除失败', icon: 'none' });
-                }
+        confirmText: '彻底删除',
+        onConfirm: async () => {
+            try {
+                await api.permanentDeleteItem(adminKey.value, id);
+                await refreshTrash();
+                await load(true);
+                uni.showToast({ title: '已彻底删除', icon: 'none' });
+            } catch (e) {
+                uni.showToast({ title: '删除失败', icon: 'none' });
+                throw e;
             }
         }
     });
 };
 
 const handleEmptyTrash = () => {
-    uni.showModal({
+    openConfirmDialog({
         title: '⚠️ 清空回收站',
         content: `将彻底删除 ${trashItems.value.length} 个条目及其文件，不可恢复！`,
-        success: async (res) => {
-            if (res.confirm) {
-                try {
-                    const result = await api.emptyTrash(adminKey.value);
-                    await refreshTrash();
-                    await load(true);
-                    uni.showToast({ title: `已清空 ${result.deleted} 项`, icon: 'none' });
-                } catch (e) {
-                    uni.showToast({ title: '清空失败', icon: 'none' });
-                }
+        confirmText: '清空回收站',
+        onConfirm: async () => {
+            try {
+                const result = await api.emptyTrash(adminKey.value);
+                await refreshTrash();
+                await load(true);
+                uni.showToast({ title: `已清空 ${result.deleted} 项`, icon: 'none' });
+            } catch (e) {
+                uni.showToast({ title: '清空失败', icon: 'none' });
+                throw e;
             }
         }
     });
@@ -1024,8 +1339,27 @@ const captureFrameFromUrl = (videoUrl) => {
 };
 
 const generateMissingThumbs = async () => {
+    let sourceItems = items.value;
+
+    // 扫描全量列表，而不是仅当前分页已加载的数据，避免误判“都有封面”
+    try {
+        const allData = await api.fetchItems(adminKey.value, 0, 0, searchQuery.value);
+        const allItems = allData.items || allData;
+        if (Array.isArray(allItems)) {
+            sourceItems = allItems;
+        }
+    } catch (e) {
+        if (e && e.message === 'AUTH_FAILED') {
+            uni.showToast({ title: '密钥失效', icon: 'none' });
+            adminKey.value = '';
+            uni.removeStorageSync('peanut_api_key');
+            return;
+        }
+        // 拉取全量失败时，回退到当前已加载列表，保证功能可用
+    }
+
     const videoMedia = [];
-    for (const item of items.value) {
+    for (const item of sourceItems) {
         const mediaList = Array.isArray(item.media) ? item.media : [];
         for (const media of mediaList) {
             if (isVideo(media.src) && !media.thumb) {
@@ -1051,7 +1385,7 @@ const generateMissingThumbs = async () => {
                 let frameUrl = '';
                 try {
                     frameUrl = URL.createObjectURL(frameFile);
-                    const thumbData = await api.uploadFile(adminKey.value, frameUrl, frameFile);
+                    const thumbData = await api.uploadFile(adminKey.value, frameUrl, frameFile, null, { skipThumb: true });
                     await api.updateItem(adminKey.value, media.id, { thumb: thumbData.url });
                 } finally {
                     revokeBlobUrl(frameUrl);
@@ -1071,12 +1405,12 @@ const generateMissingThumbs = async () => {
 // ==================== 编辑条目 ====================
 
 const showEditModal = ref(false);
-const editItemData = reactive({ id: null, title: '', description: '', dateStr: '', timeStr: '' });
+const editItemData = reactive({ id: null, description: '', originalTitle: '', dateStr: '', timeStr: '' });
 
 const openEdit = (item) => {
     editItemData.id = item.id;
-    editItemData.title = item.title || '';
-    editItemData.description = item.description || '';
+    editItemData.originalTitle = item.title || '';
+    editItemData.description = getItemDescription(item);
     const d = new Date(item.date);
     if (!isNaN(d.getTime())) {
         editItemData.dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -1093,7 +1427,12 @@ const editItemDateChange = (e) => { editItemData.dateStr = e.detail.value; };
 const editItemTimeChange = (e) => { editItemData.timeStr = e.detail.value; };
 
 const handleSaveEdit = async () => {
-    const updateData = { title: editItemData.title, description: editItemData.description || null };
+    const content = (editItemData.description || '').trim();
+    const fallbackTitle = (editItemData.originalTitle || '').trim();
+    const updateData = {
+        title: '',
+        description: content || fallbackTitle || null
+    };
     if (editItemData.dateStr) {
         const dateStr = editItemData.dateStr + (editItemData.timeStr ? 'T' + editItemData.timeStr : 'T00:00');
         updateData.date = new Date(dateStr).toISOString();
@@ -1207,6 +1546,53 @@ const logout = () => {
 
 // ==================== 数据加载 ====================
 
+const loadGroupCounts = async () => {
+    try {
+        const data = await api.fetchItemCounts(
+            adminKey.value || uni.getStorageSync('peanut_api_key') || '',
+            searchQuery.value
+        );
+        yearCountMap.value = (data && data.year_counts) || {};
+        monthCountMap.value = (data && data.month_counts) || {};
+    } catch (e) {
+        resetGroupCountMaps();
+    }
+};
+
+const appendNextPage = async (limit) => {
+    const data = await api.fetchItems(adminKey.value || uni.getStorageSync('peanut_api_key') || '', page.value, limit, searchQuery.value);
+    const newItems = data.items || data;
+    if (!Array.isArray(newItems)) {
+        hasMore.value = false;
+        return 0;
+    }
+
+    if (newItems.length < limit) {
+        hasMore.value = false;
+    }
+
+    if (newItems.length > 0) {
+        items.value = [...items.value, ...newItems];
+        page.value += 1;
+    }
+
+    return newItems.length;
+};
+
+const ensureMonthQuotaForDefaultView = async (limit) => {
+    while (hasMore.value) {
+        const stats = getInitialMonthStats();
+        if (!stats) break;
+
+        // 当前月不足 5 条时，继续拉取直到“当前月 + 上一月”至少 5 条
+        if (stats.currentCount >= MIN_EXPANDED_ITEMS) break;
+        if ((stats.currentCount + stats.prevCount) >= MIN_EXPANDED_ITEMS) break;
+
+        const loaded = await appendNextPage(limit);
+        if (loaded <= 0) break;
+    }
+};
+
 const load = async (isRefresh = true) => {
     if (isLoading.value) return;
 
@@ -1215,6 +1601,7 @@ const load = async (isRefresh = true) => {
         hasMore.value = true;
         items.value = [];
         showBackTop.value = false;
+        resetGroupCountMaps();
     }
 
     if (!hasMore.value) return;
@@ -1223,15 +1610,17 @@ const load = async (isRefresh = true) => {
     const limit = appConfig.pageSize && Number(appConfig.pageSize) > 0 ? Number(appConfig.pageSize) : 5;
 
     try {
-        const data = await api.fetchItems(adminKey.value || uni.getStorageSync('peanut_api_key') || '', page.value, limit, searchQuery.value);
-        // 后端分页返回 { items, total, page, limit }
-        const newItems = data.items || data;
-        if (Array.isArray(newItems)) {
-            if (newItems.length < limit) {
-                hasMore.value = false;
-            }
-            items.value = [...items.value, ...newItems];
-            page.value++;
+        if (isRefresh) {
+            await loadGroupCounts();
+        }
+
+        await appendNextPage(limit);
+
+        if (isRefresh) {
+            await ensureMonthQuotaForDefaultView(limit);
+            applyDefaultCollapseState();
+        } else {
+            syncCollapseStateForNewGroups();
         }
     } catch (e) {
         uni.showToast({ title: '加载失败', icon: 'none' });
@@ -1855,8 +2244,63 @@ onMounted(() => {
 .timeline-track {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 30px;
   padding-left: 0;
+}
+
+.year-group,
+.year-body,
+.month-group,
+.month-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.year-group {
+  gap: 18px;
+}
+
+.year-body {
+  gap: 20px;
+}
+
+.month-group {
+  gap: 16px;
+}
+
+.month-body {
+  gap: 24px;
+}
+
+.collapse-header {
+  user-select: none;
+  cursor: pointer;
+}
+
+.year-header {
+  position: relative;
+  padding-left: 60px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.year-dot {
+  position: absolute;
+  left: 15px;
+  width: 22px;
+  height: 22px;
+  background: var(--ink);
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(93, 64, 55, 0.28);
+  z-index: 2;
+}
+
+.year-title {
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .month-header {
@@ -1864,6 +2308,7 @@ onMounted(() => {
   padding-left: 60px;
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .month-dot {
@@ -1883,6 +2328,17 @@ onMounted(() => {
   font-weight: 700;
   color: var(--ink);
   letter-spacing: 0.02em;
+}
+
+.group-count {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.collapse-arrow {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
 .timeline-item {
@@ -2263,6 +2719,75 @@ onMounted(() => {
 
 .auth-overlay {
     z-index: 11000;
+}
+
+.confirm-overlay {
+    z-index: 12000;
+}
+
+.confirm-modal {
+    max-width: 420px;
+}
+
+.confirm-body {
+    gap: 0;
+}
+
+.confirm-text {
+    font-size: 0.95rem;
+    color: var(--ink);
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+.confirm-footer {
+    display: flex;
+    gap: 10px;
+}
+
+.confirm-footer .btn {
+    flex: 1;
+}
+
+.image-preview-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 13000;
+}
+
+.image-preview-swiper {
+    width: 100%;
+    height: 100%;
+}
+
+.image-preview-item {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.image-preview-image {
+    width: 100%;
+    height: 100%;
+}
+
+.image-preview-close {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    z-index: 13001;
 }
 
 .auth-modal {
