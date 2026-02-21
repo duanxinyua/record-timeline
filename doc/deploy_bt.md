@@ -1,6 +1,8 @@
-# 宝塔面板 (BT Panel) 部署指南
+# 宝塔面板 (BT Panel) 部署指南（PHP 建站版）
 
 本指南基于当前仓库代码（`photo-timeline-backend`、`photo-timeline-admin`、`photo-timeline-uniapp`）整理，适用于 Linux + 宝塔 + Nginx + PHP 环境。
+
+说明：本版本按“宝塔面板可视化操作”编写，不依赖命令行。
 
 ## 项目结构
 
@@ -60,28 +62,49 @@ hetao.us/
 
 ## 二、部署后端（PHP）
 
-### 1. 上传后端代码
+### 1. 在宝塔创建后端站点
 
-将 `photo-timeline-backend` 部署到站点目录，例如：
+在宝塔面板中：
 
-- `/www/wwwroot/api.hetao.us/`
+1. 进入 `网站` -> `添加站点`
+2. 域名填写：`api.hetao.us`（按你的实际域名）
+3. PHP 版本选择：`8.1` 或更高
+4. 网站目录建议：`/www/wwwroot/api.hetao.us`
+5. 提交创建
 
-### 2. 初始化配置文件
+创建后在 `网站 -> api.hetao.us -> 设置` 中确认：
 
-在后端目录执行（或手动复制）：
+- 运行目录：网站根目录（即包含 `index.php` 的目录）
+- 默认文档包含 `index.php`
 
-```bash
-cd /www/wwwroot/api.hetao.us
-cp config.example.php config.php
-cp .env.example .env
-```
+### 2. 上传后端代码
+
+将 `photo-timeline-backend` 目录内文件上传到站点根目录（例如 `/www/wwwroot/api.hetao.us`）。
+
+上传完成后应能看到：
+
+- `index.php`
+- `db.php`
+- `config.example.php`
+- `.env.example`
+- `src/`
+- `uploads/`（没有也没关系，系统会创建）
+
+### 3. 通过文件管理器初始化配置文件（不使用命令行）
+
+在宝塔 `文件` 中进入后端目录：
+
+1. 复制 `config.example.php` 并重命名为 `config.php`
+2. 复制 `.env.example` 并重命名为 `.env`
+
+然后用宝塔在线编辑器修改 `.env`。
 
 说明：
 
 - `config.php` 必须存在，后端通过 `require config.php` 加载配置。
 - `config.php` 会读取 `.env`（如果存在），建议生产环境使用 `.env` 注入敏感配置。
 
-### 3. 配置关键参数（至少这些）
+### 4. 配置关键参数（至少这些）
 
 编辑 `.env`：
 
@@ -100,9 +123,9 @@ PEANUT_AMAP_KEY=你的高德Web服务Key
 - `PEANUT_UPLOAD_DIR` 自定义上传目录
 - `PEANUT_THUMB_MAX_WIDTH`、`PEANUT_THUMB_QUALITY` 调整缩略图策略
 
-### 4. Nginx 伪静态
+### 5. 配置 Nginx 伪静态（宝塔面板）
 
-在后端站点伪静态中配置：
+进入 `网站 -> api.hetao.us -> 设置 -> 伪静态`，选择 `Nginx` 并填入：
 
 ```nginx
 location / {
@@ -113,33 +136,39 @@ location / {
 }
 ```
 
-### 5. 权限
+### 6. 设置权限（宝塔文件面板）
 
-```bash
-chown -R www:www /www/wwwroot/api.hetao.us
-chmod -R 775 /www/wwwroot/api.hetao.us
-chmod -R 777 /www/wwwroot/api.hetao.us/uploads
-```
+在 `文件` 面板中，重点检查：
 
-### 6. 后端连通性验证
+- `uploads/` 目录可写
+- `timeline.db`（首次请求后自动创建）可读写
+- 站点目录属主建议为 `www`
 
-健康检查：
+推荐权限：
 
-```bash
-curl -s https://api.hetao.us/
-```
+- 普通文件：`644`
+- 普通目录：`755`
+- `uploads/`：`775`（至少可写）
 
-预期返回：
+### 7. 后端连通性验证（无需命令行）
+
+健康检查（浏览器直接访问）：
+
+- `https://api.hetao.us/`
+
+预期返回 JSON：
 
 ```json
 {"message":"Peanut Timeline Backend (PHP refactored) is Running!"}
 ```
 
-鉴权检查：
+鉴权检查（推荐用 Apifox / Postman）：
 
-```bash
-curl -i -H "x-api-key: 你的密钥" https://api.hetao.us/verify-key
-```
+- URL：`https://api.hetao.us/verify-key`
+- Method：`GET`
+- Header：`x-api-key: 你的密钥`
+
+返回 `200` 即正常。
 
 ## 三、前端 API 地址
 
@@ -156,17 +185,23 @@ const API_BASE = 'https://api.hetao.us';
 
 ## 四、打包前端
 
+说明：打包可在本地开发机完成后上传 `dist`，不强制在服务器命令行执行。
+
+如果你在服务器上使用“终端”执行，也可参考：
+
 ```bash
 # 管理端
 cd /www/wwwroot/hetao.us/photo-timeline-admin
-npm ci
-npm run build:h5
+npm install
+npm run buildh5
 
 # 用户端
 cd /www/wwwroot/hetao.us/photo-timeline-uniapp
-npm ci
-npm run build:h5
+npm install
+npm run buildh5
 ```
+
+说明：`buildh5` 为项目脚本，等价于 `npm run build:h5`。
 
 产物目录：
 
@@ -245,6 +280,14 @@ location / {
 - 生成格式：`毫秒时间戳-5位随机36进制`。
 - 列表聚合按 `COALESCE(NULLIF(group_id, ''), id)` 分组，确保旧数据与空值也可稳定展示。
 - 年/月计数接口同样按上述分组口径统计（统计“动态条数”，非媒体文件条数）。
+
+### 4. 关键参数说明（后端接口）
+
+- `GET /items`：`page`（可选，>=1）、`limit`（可选，>0）、`search`（可选）。
+- `GET /items/counts`：`search`（可选，和 `/items` 同口径过滤）。
+- `POST /items`（JSON）：`date`、`src` 必填；`description`、`thumb`、`group_id`、`latitude`、`longitude`、`taken_at` 可选。
+- `PUT /items/{id}`（JSON）：可更新 `title`、`description`、`date`、`thumb`。
+- `POST /upload`（form-data）：`file` 必填；`skip_thumb=1` 可选（跳过图片二次缩略图）；`exif_date`、`exif_lat`、`exif_lng` 可选。
 
 ## 八、EXIF 与地址解析策略
 
