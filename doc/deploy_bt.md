@@ -7,7 +7,7 @@
 ## 项目结构
 
 ```text
-hetao.us/
+project-root/
 ├── photo-timeline-backend/      # PHP 后端 API
 │   ├── index.php                # 统一入口与路由
 │   ├── db.php                   # SQLite 初始化与迁移
@@ -67,19 +67,14 @@ hetao.us/
 在宝塔面板中：
 
 1. 进入 `网站` -> `添加站点`
-2. 域名填写：`api.hetao.us`（按你的实际域名）
-3. PHP 版本选择：`8.1` 或更高
-4. 网站目录建议：`/www/wwwroot/api.hetao.us`
+2. 域名填写：`api.example.com`（按你的实际域名）
+3. PHP 版本选择：`8.0` 或更高
+4. 网站目录建议：`/www/wwwroot/api.example.com`
 5. 提交创建
-
-创建后在 `网站 -> api.hetao.us -> 设置` 中确认：
-
-- 运行目录：网站根目录（即包含 `index.php` 的目录）
-- 默认文档包含 `index.php`
 
 ### 2. 上传后端代码
 
-将 `photo-timeline-backend` 目录内文件上传到站点根目录（例如 `/www/wwwroot/api.hetao.us`）。
+将 `photo-timeline-backend` 目录内文件上传到站点根目录（例如 `/www/wwwroot/api.example.com`）。
 
 上传完成后应能看到：
 
@@ -111,8 +106,8 @@ hetao.us/
 ```ini
 PEANUT_API_SECRET=请设置强密钥
 PEANUT_PRODUCTION=true
-PEANUT_BASE_URL=https://api.hetao.us
-PEANUT_CORS_ALLOWED_ORIGINS=https://hetao.us,https://admin.hetao.us
+PEANUT_BASE_URL=https://api.example.com
+PEANUT_CORS_ALLOWED_ORIGINS=https://www.example.com,https://admin.example.com
 PEANUT_SSL_VERIFY=true
 PEANUT_AMAP_KEY=你的高德Web服务Key
 ```
@@ -125,15 +120,39 @@ PEANUT_AMAP_KEY=你的高德Web服务Key
 
 ### 5. 配置 Nginx 伪静态（宝塔面板）
 
-进入 `网站 -> api.hetao.us -> 设置 -> 伪静态`，选择 `Nginx` 并填入：
+进入 `网站 -> api.example.com -> 设置 -> 伪静态`，选择 `Nginx` 并填入：
 
-```nginx
+```nginx=
+
 location / {
-    if (!-e $request_filename){
-        rewrite  ^(.*)$  /index.php?s=$1  last;
-        break;
-    }
+  if (!-e $request_filename){
+    rewrite  ^(.*)$  /index.php?s=$1  last;   break;
+  }
 }
+location ^~ /uploads/ {
+  # 只允许你的前端域名
+  if ($http_origin ~* "^https://(admin\.hetao\.us|hetao\.us)$") {
+    add_header Access-Control-Allow-Origin $http_origin always;
+    add_header Vary Origin always;
+    add_header Access-Control-Expose-Headers "Content-Length,Content-Range,Accept-Ranges" always;
+  }
+
+  # 可选：处理预检
+  if ($request_method = OPTIONS) {
+    add_header Access-Control-Allow-Origin $http_origin always;
+    add_header Access-Control-Allow-Methods "GET,HEAD,OPTIONS" always;
+    add_header Access-Control-Allow-Headers "Range,Content-Type" always;
+    add_header Content-Length 0;
+    add_header Content-Type text/plain;
+    return 204;
+  }
+
+  try_files $uri =404;
+}
+
+
+
+
 ```
 
 ### 6. 设置权限（宝塔文件面板）
@@ -154,7 +173,7 @@ location / {
 
 健康检查（浏览器直接访问）：
 
-- `https://api.hetao.us/`
+- `https://api.example.com/`
 
 预期返回 JSON：
 
@@ -164,7 +183,7 @@ location / {
 
 鉴权检查（推荐用 Apifox / Postman）：
 
-- URL：`https://api.hetao.us/verify-key`
+- URL：`https://api.example.com/verify-key`
 - Method：`GET`
 - Header：`x-api-key: 你的密钥`
 
@@ -180,7 +199,7 @@ location / {
 确保为：
 
 ```js
-const API_BASE = 'https://api.hetao.us';
+const API_BASE = 'https://api.example.com';
 ```
 
 ## 四、打包前端
@@ -191,12 +210,12 @@ const API_BASE = 'https://api.hetao.us';
 
 ```bash
 # 管理端
-cd /www/wwwroot/hetao.us/photo-timeline-admin
+cd /www/wwwroot/your-project/photo-timeline-admin
 npm install
 npm run buildh5
 
 # 用户端
-cd /www/wwwroot/hetao.us/photo-timeline-uniapp
+cd /www/wwwroot/your-project/photo-timeline-uniapp
 npm install
 npm run buildh5
 ```
@@ -210,7 +229,7 @@ npm run buildh5
 
 ## 五、部署前端站点
 
-### 1. 用户端（`hetao.us`）
+### 1. 用户端（`www.example.com`）
 
 - 根目录指向 `photo-timeline-uniapp/dist/build/h5`
 - 伪静态：
@@ -221,7 +240,7 @@ location / {
 }
 ```
 
-### 2. 管理端（`admin.hetao.us`）
+### 2. 管理端（`admin.example.com`）
 
 - 根目录指向 `photo-timeline-admin/dist/build/h5`
 - 伪静态：
