@@ -87,6 +87,7 @@ class UploadController {
 
         if (move_uploaded_file($file['tmp_name'], $targetPath)) {
             $url = ImageUtils::buildUploadUrl($newFilename, $this->config['base_url']);
+            $skipThumb = isset($_POST['skip_thumb']) && in_array(strtolower((string)$_POST['skip_thumb']), ['1', 'true', 'yes', 'on'], true);
 
             // 提取 EXIF 信息
             $exifData = [];
@@ -132,7 +133,7 @@ class UploadController {
 
             // 生成缩略图
             $thumbUrl = null;
-            if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'])) {
+            if (!$skipThumb && in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'])) {
                 $thumbFilename = $baseId . '_thumb.jpg';
                 $thumbPath = rtrim($this->config['upload_dir'], '/') . '/' . $thumbFilename;
                 if (ImageUtils::createThumbnail($targetPath, $thumbPath, $this->config['thumb_max_width'], $this->config['thumb_quality'])) {

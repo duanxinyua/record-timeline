@@ -119,6 +119,9 @@ if ($uri === '/upload' && $method === 'POST') {
 elseif (($uri === '/items/' || $uri === '/items') && $method === 'GET') {
     $itemController->getList();
 }
+elseif (($uri === '/items/counts' || $uri === '/items/counts/') && $method === 'GET') {
+    $itemController->getGroupCounts();
+}
 elseif (($uri === '/items/' || $uri === '/items') && $method === 'POST') {
     $itemController->create();
 }

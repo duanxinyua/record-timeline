@@ -76,3 +76,31 @@ export const fetchItems = (apiKey, page = 0, limit = 0, search = '') => {
         });
     });
 };
+
+/**
+ * 获取按 年/月 聚合后的动态总数（不受分页影响）
+ */
+export const fetchItemCounts = (apiKey, search = '') => {
+    return new Promise((resolve, reject) => {
+        let url = `${API_BASE}/items/counts`;
+        if (search) {
+            url += `?search=${encodeURIComponent(search)}`;
+        }
+
+        uni.request({
+            url,
+            method: 'GET',
+            header: { 'x-api-key': apiKey },
+            success: (res) => {
+                if (res.statusCode === 200) {
+                    resolve(res.data);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
+                } else {
+                    reject(new Error('加载失败'));
+                }
+            },
+            fail: (e) => reject(e)
+        });
+    });
+};
