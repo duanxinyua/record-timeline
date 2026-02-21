@@ -14,7 +14,7 @@
 ## 项目结构
 
 ```text
-hetao.us/
+project-root/
 ├── photo-timeline-backend/      # PHP 后端 API
 ├── photo-timeline-admin/        # 管理端（uni-app H5）
 ├── photo-timeline-uniapp/       # 用户端（uni-app H5）
@@ -85,27 +85,7 @@ PEANUT_AMAP_KEY=
 - `PEANUT_SSL_VERIFY`：后端请求外部 HTTPS 服务时是否校验证书，生产环境建议保持 `true`。
 - `PEANUT_AMAP_KEY`：高德地图 Web Service Key。用于将 EXIF 坐标解析为中文地址；留空则不走高德解析。
 
-### 3. 启动后端
-
-在仓库根目录执行：
-
-```bash
-php -S 0.0.0.0:8000 -t photo-timeline-backend photo-timeline-backend/index.php
-```
-
-健康检查：
-
-```bash
-curl http://127.0.0.1:8000/
-```
-
-预期返回：
-
-```json
-{"message":"Peanut Timeline Backend (PHP refactored) is Running!"}
-```
-
-### 4. 启动管理端
+### 3. 启动管理端
 
 ```bash
 cd photo-timeline-admin
@@ -113,13 +93,15 @@ npm install
 npm run dev:h5
 ```
 
-### 5. 启动用户端
+### 4. 启动用户端
 
 ```bash
 cd photo-timeline-uniapp
 npm install
 npm run dev:h5
 ```
+
+后端启动与部署请参考 `doc/deploy_bt.md`（宝塔面板方式，不使用 PHP 命令行部署）。
 
 ## 打包构建
 
