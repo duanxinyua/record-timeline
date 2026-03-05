@@ -3,8 +3,8 @@
  * 管理后台专用，包含所有后端通信逻辑
  */
 
-// API 基础地址
-const API_BASE = 'https://api.hetao.us';
+// API 基础地址（开发环境走本地代理，避免跨域）
+const API_BASE = import.meta.env.DEV ? '/api' : 'https://api.hetao.us';
 
 /**
  * 获取 API 基础地址

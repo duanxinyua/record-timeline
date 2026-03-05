@@ -12,6 +12,14 @@ export default defineConfig({
     hmr: {
       host: 'localhost',
       protocol: 'ws',
+    },
+    proxy: {
+      '/api': {
+        target: 'https://api.hetao.us',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      }
     }
   },
 })

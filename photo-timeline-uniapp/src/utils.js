@@ -31,6 +31,22 @@ export const isVideo = (url) => {
  * 预览图片
  */
 export const previewImage = (url, allUrls = []) => {
-    const urls = allUrls.length > 0 ? allUrls : [url];
+    const radius = 2;
+    let urls = [url];
+
+    if (allUrls.length > 0) {
+        const index = allUrls.findIndex((item) => item === url);
+        if (index >= 0) {
+            const start = Math.max(0, index - radius);
+            const end = Math.min(allUrls.length - 1, index + radius);
+            urls = allUrls.slice(start, end + 1);
+        } else {
+            urls = allUrls.slice(0, Math.min(allUrls.length, radius * 2 + 1));
+            if (!urls.includes(url)) {
+                urls.unshift(url);
+            }
+        }
+    }
+
     uni.previewImage({ current: url, urls });
 };
