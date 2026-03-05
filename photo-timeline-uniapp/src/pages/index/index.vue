@@ -535,6 +535,26 @@ const syncCollapseStateForNewGroups = () => {
     if (monthsChanged) collapsedMonths.value = months;
 };
 
+const autoExpandFirstNewMonth = (previousMonthKeys) => {
+    if (!previousMonthKeys || previousMonthKeys.size === 0) return;
+
+    for (const yearGroup of groupedItems.value) {
+        for (const monthGroup of yearGroup.months) {
+            if (!previousMonthKeys.has(monthGroup.collapseKey)) {
+                collapsedYears.value = {
+                    ...collapsedYears.value,
+                    [yearGroup.key]: false
+                };
+                collapsedMonths.value = {
+                    ...collapsedMonths.value,
+                    [monthGroup.collapseKey]: false
+                };
+                return;
+            }
+        }
+    }
+};
+
 const resetGroupCountMaps = () => {
     yearCountMap.value = {};
     monthCountMap.value = {};
@@ -680,6 +700,7 @@ const load = async (isRefresh = true) => {
     isLoading.value = true;
 
     const limit = appConfig.pageSize && Number(appConfig.pageSize) > 0 ? Number(appConfig.pageSize) : 5;
+    const previousMonthKeys = isRefresh ? null : new Set(Object.keys(collapsedMonths.value));
 
     try {
         if (isRefresh) {
@@ -693,6 +714,7 @@ const load = async (isRefresh = true) => {
             applyDefaultCollapseState();
         } else {
             syncCollapseStateForNewGroups();
+            autoExpandFirstNewMonth(previousMonthKeys);
         }
     } catch (e) {
         uni.showToast({ title: '加载失败', icon: 'none' });
