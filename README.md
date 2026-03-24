@@ -86,7 +86,7 @@ PEANUT_AMAP_KEY=
 - `PEANUT_FFMPEG_BIN`：`ffmpeg` 可执行文件路径。视频自动转码依赖它。
 - `PEANUT_VIDEO_TRANSCODE_PRESET`：视频转码速度档位，默认 `veryfast`。
 - `PEANUT_VIDEO_TRANSCODE_CRF`：视频转码清晰度/体积平衡参数，默认 `23`。
-- `PEANUT_AMAP_KEY`：高德地图 Web Service Key。用于将 EXIF 坐标解析为中文地址；留空则不走高德解析。
+- `PEANUT_AMAP_KEY`：高德地图 Web Service Key。用于将 EXIF 坐标解析为中文地址；留空则不走高德解析。后端会在中国大陆范围内先将照片 EXIF 的 `WGS84` 坐标转换为高德使用的 `GCJ-02`，以减少地址偏移。
 
 ### 3. 启动管理端
 
@@ -152,6 +152,7 @@ npm run buildh5
 - `POST /empty-trash`
 - `POST /upload`
 - `POST /clear-addresses`
+- `POST /refresh-addresses`
 
 说明：除根路径健康检查外，业务接口都需要请求头 `x-api-key: <PEANUT_API_SECRET>`。
 
@@ -162,7 +163,23 @@ npm run buildh5
 - `POST /items`（JSON）：`date`、`src` 必填；`description`、`thumb`、`group_id`、`latitude`、`longitude`、`taken_at` 可选。
 - `PUT /items/{id}`（JSON）：可更新 `title`、`description`、`date`、`thumb`。
 - `POST /upload`（form-data）：`file` 必填；`skip_thumb=1` 可选（跳过图片二次缩略图生成）；`exif_date`、`exif_lat`、`exif_lng` 可选。
+- `POST /clear-addresses`：清空当前已缓存的地址文本，不改经纬度。
+- `POST /refresh-addresses`：按当前坐标系规则重新解析所有带坐标条目的地址，并直接回写数据库。
 - 视频上传说明：后端会尽量统一输出为 `MP4 (H.264/AVC + AAC)`，以提升手机和 PC 浏览器兼容性；未安装 `ffmpeg` 时，需转码的视频会上传失败并返回明确错误。
+
+## 地址与坐标说明
+
+- 照片 EXIF 中的 GPS 坐标通常是 `WGS84`。
+- 高德地图逆地理和 H5 地图落点使用的是 `GCJ-02`。
+- 后端在调用高德逆地理前，会自动将中国大陆范围内的 `WGS84` 转成 `GCJ-02`；中国大陆以外则保持原坐标不变。
+- 前端点击“查看地图”时，也会按相同规则转换，避免“地址文本正确但地图落点仍偏移”。
+
+如果你已经在旧版本中缓存过地址：
+
+- 新上传的图片/视频会直接使用修正后的地址解析逻辑。
+- 历史记录不会自动重算，需要手动刷新。
+- 管理端时间轴右上角有一个 `📍` 按钮，会调用 `POST /refresh-addresses` 重新生成历史地址。
+- 如果你只想删除地址缓存而不立即重建，可以调用 `POST /clear-addresses`。
 
 ## 数据说明（核心）
 
