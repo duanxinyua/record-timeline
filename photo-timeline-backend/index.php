@@ -146,6 +146,9 @@ elseif (($uri === '/empty-trash' || $uri === '/empty-trash/') && $method === 'PO
 elseif (($uri === '/clear-addresses' || $uri === '/clear-addresses/') && $method === 'POST') {
     $itemController->clearAddresses();
 }
+elseif (($uri === '/refresh-addresses' || $uri === '/refresh-addresses/') && $method === 'POST') {
+    $itemController->refreshAddresses();
+}
 elseif (($uri === '/config' || $uri === '/config/') && $method === 'GET') {
     $configController->getConfig();
 }

@@ -3,6 +3,7 @@ namespace App\Controllers;
 
 use App\Utils\HttpUtils;
 use App\Utils\ImageUtils;
+use App\Utils\MediaUtils;
 
 class UploadController {
     protected $config;
@@ -80,12 +81,33 @@ class UploadController {
             }
         }
 
+        $isVideo = MediaUtils::isVideoExtension($ext);
+
         // 使用时间戳+随机数命名，保证唯一性
         $baseId = date('Ymd_His') . '_' . bin2hex(random_bytes(4));
-        $newFilename = $baseId . '.' . $ext;
+        $storedExt = $isVideo ? 'mp4' : $ext;
+        $newFilename = $baseId . '.' . $storedExt;
         $targetPath = rtrim($this->config['upload_dir'], '/') . '/' . $newFilename;
 
-        if (move_uploaded_file($file['tmp_name'], $targetPath)) {
+        $saved = false;
+        $saveError = null;
+
+        if ($isVideo) {
+            try {
+                if (MediaUtils::shouldTranscodeUpload($file['tmp_name'], $ext)) {
+                    MediaUtils::transcodeToBrowserMp4($file['tmp_name'], $targetPath, $this->config);
+                    $saved = true;
+                } else {
+                    $saved = move_uploaded_file($file['tmp_name'], $targetPath);
+                }
+            } catch (\RuntimeException $e) {
+                $saveError = $e->getMessage();
+            }
+        } else {
+            $saved = move_uploaded_file($file['tmp_name'], $targetPath);
+        }
+
+        if ($saved) {
             $url = ImageUtils::buildUploadUrl($newFilename, $this->config['base_url']);
             $skipThumb = isset($_POST['skip_thumb']) && in_array(strtolower((string)$_POST['skip_thumb']), ['1', 'true', 'yes', 'on'], true);
 
@@ -93,7 +115,7 @@ class UploadController {
             $exifData = [];
 
             // 1. 服务端 EXIF 读取（支持 JPEG 和 TIFF）
-            if (in_array($ext, ['jpg', 'jpeg', 'tiff', 'tif']) && function_exists('exif_read_data')) {
+            if (in_array($storedExt, ['jpg', 'jpeg', 'tiff', 'tif']) && function_exists('exif_read_data')) {
                 $exif = @exif_read_data($targetPath, 'ANY_TAG', true);
                 if ($exif) {
                     if (!empty($exif['EXIF']['DateTimeOriginal'])) {
@@ -133,7 +155,7 @@ class UploadController {
 
             // 生成缩略图
             $thumbUrl = null;
-            if (!$skipThumb && in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'])) {
+            if (!$skipThumb && in_array($storedExt, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'])) {
                 $thumbFilename = $baseId . '_thumb.jpg';
                 $thumbPath = rtrim($this->config['upload_dir'], '/') . '/' . $thumbFilename;
                 if (ImageUtils::createThumbnail($targetPath, $thumbPath, $this->config['thumb_max_width'], $this->config['thumb_quality'])) {
@@ -148,7 +170,7 @@ class UploadController {
                 "exif" => $exifData
             ]);
         } else {
-            HttpUtils::jsonResponse(["detail" => "文件保存失败"], 500);
+            HttpUtils::jsonResponse(["detail" => $saveError ?: "文件保存失败"], 500);
         }
     }
 }

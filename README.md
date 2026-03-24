@@ -83,6 +83,9 @@ PEANUT_AMAP_KEY=
 - `PEANUT_BASE_URL`：后端对外访问基准地址。用于生成上传文件的完整访问链接。
 - `PEANUT_CORS_ALLOWED_ORIGINS`：允许跨域访问的前端域名白名单，多个域名用英文逗号分隔。
 - `PEANUT_SSL_VERIFY`：后端请求外部 HTTPS 服务时是否校验证书，生产环境建议保持 `true`。
+- `PEANUT_FFMPEG_BIN`：`ffmpeg` 可执行文件路径。视频自动转码依赖它。
+- `PEANUT_VIDEO_TRANSCODE_PRESET`：视频转码速度档位，默认 `veryfast`。
+- `PEANUT_VIDEO_TRANSCODE_CRF`：视频转码清晰度/体积平衡参数，默认 `23`。
 - `PEANUT_AMAP_KEY`：高德地图 Web Service Key。用于将 EXIF 坐标解析为中文地址；留空则不走高德解析。
 
 ### 3. 启动管理端
@@ -159,6 +162,7 @@ npm run buildh5
 - `POST /items`（JSON）：`date`、`src` 必填；`description`、`thumb`、`group_id`、`latitude`、`longitude`、`taken_at` 可选。
 - `PUT /items/{id}`（JSON）：可更新 `title`、`description`、`date`、`thumb`。
 - `POST /upload`（form-data）：`file` 必填；`skip_thumb=1` 可选（跳过图片二次缩略图生成）；`exif_date`、`exif_lat`、`exif_lng` 可选。
+- 视频上传说明：后端会尽量统一输出为 `MP4 (H.264/AVC + AAC)`，以提升手机和 PC 浏览器兼容性；未安装 `ffmpeg` 时，需转码的视频会上传失败并返回明确错误。
 
 ## 数据说明（核心）
 

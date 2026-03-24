@@ -16,6 +16,23 @@ class TimelineItem extends Model {
     }
 
     /**
+     * 获取所有可重建地址的记录
+     */
+    public function getAddressableItems() {
+        $sql = "SELECT id, latitude, longitude, address FROM {$this->table} WHERE deleted_at IS NULL AND latitude IS NOT NULL AND longitude IS NOT NULL ORDER BY id ASC";
+        $stmt = $this->pdo->query($sql);
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * 更新单条记录的地址
+     */
+    public function updateAddress($id, $address) {
+        $stmt = $this->pdo->prepare("UPDATE {$this->table} SET address = ? WHERE id = ?");
+        return $stmt->execute([$address, $id]);
+    }
+
+    /**
      * 软删除：标记 deleted_at
      */
     public function softDelete($id) {

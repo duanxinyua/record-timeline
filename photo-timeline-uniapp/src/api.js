@@ -38,6 +38,8 @@ export const fetchConfig = (apiKey) => {
             success: (res) => {
                 if (res.statusCode === 200) {
                     resolve(res.data);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
                 } else {
                     reject(new Error('获取配置失败'));
                 }
@@ -68,6 +70,8 @@ export const fetchItems = (apiKey, page = 0, limit = 0, search = '') => {
             success: (res) => {
                 if (res.statusCode === 200) {
                     resolve(res.data);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
                 } else {
                     reject(new Error('加载失败'));
                 }

@@ -84,6 +84,15 @@ return [
     // 缩略图生成的压缩质量 (1-100，100为最好质量且体积最大)
     'thumb_quality' => (int)(getenv('PEANUT_THUMB_QUALITY') ?: 60),
 
+    // FFmpeg 可执行文件路径
+    'ffmpeg_bin' => getenv('PEANUT_FFMPEG_BIN') ?: 'ffmpeg',
+
+    // 视频转码 preset
+    'video_transcode_preset' => getenv('PEANUT_VIDEO_TRANSCODE_PRESET') ?: 'veryfast',
+
+    // 视频转码 CRF（越小越清晰，体积越大）
+    'video_transcode_crf' => (int)(getenv('PEANUT_VIDEO_TRANSCODE_CRF') ?: 23),
+
     // 高德地图 Web Service API Key
     // 用于自动将照片中提取的 GPS 经纬度坐标反解析为具体的中文地址（省市区街道）
     'amap_key' => getenv('PEANUT_AMAP_KEY') ?: '',

@@ -218,6 +218,50 @@ const hasCoord = (lat, lng) => (
     lng !== null && lng !== undefined && lng !== ''
 );
 
+const GCJ_PI = 3.1415926535897932384626;
+const GCJ_A = 6378245.0;
+const GCJ_EE = 0.00669342162296594323;
+
+const isOutsideChinaMainland = (lat, lng) => (
+    lng < 73.66 || lng > 135.05 || lat < 3.86 || lat > 53.55
+);
+
+const transformLat = (lng, lat) => {
+    let ret = -100.0 + 2.0 * lng + 3.0 * lat + 0.2 * lat * lat + 0.1 * lng * lat + 0.2 * Math.sqrt(Math.abs(lng));
+    ret += (20.0 * Math.sin(6.0 * lng * GCJ_PI) + 20.0 * Math.sin(2.0 * lng * GCJ_PI)) * 2.0 / 3.0;
+    ret += (20.0 * Math.sin(lat * GCJ_PI) + 40.0 * Math.sin(lat / 3.0 * GCJ_PI)) * 2.0 / 3.0;
+    ret += (160.0 * Math.sin(lat / 12.0 * GCJ_PI) + 320.0 * Math.sin(lat * GCJ_PI / 30.0)) * 2.0 / 3.0;
+    return ret;
+};
+
+const transformLng = (lng, lat) => {
+    let ret = 300.0 + lng + 2.0 * lat + 0.1 * lng * lng + 0.1 * lng * lat + 0.1 * Math.sqrt(Math.abs(lng));
+    ret += (20.0 * Math.sin(6.0 * lng * GCJ_PI) + 20.0 * Math.sin(2.0 * lng * GCJ_PI)) * 2.0 / 3.0;
+    ret += (20.0 * Math.sin(lng * GCJ_PI) + 40.0 * Math.sin(lng / 3.0 * GCJ_PI)) * 2.0 / 3.0;
+    ret += (150.0 * Math.sin(lng / 12.0 * GCJ_PI) + 300.0 * Math.sin(lng / 30.0 * GCJ_PI)) * 2.0 / 3.0;
+    return ret;
+};
+
+const toGcj02 = (lat, lng) => {
+    const parsedLat = Number(lat);
+    const parsedLng = Number(lng);
+    if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng) || isOutsideChinaMainland(parsedLat, parsedLng)) {
+        return { latitude: parsedLat, longitude: parsedLng };
+    }
+
+    const dLat = transformLat(parsedLng - 105.0, parsedLat - 35.0);
+    const dLng = transformLng(parsedLng - 105.0, parsedLat - 35.0);
+    const radLat = parsedLat / 180.0 * GCJ_PI;
+    let magic = Math.sin(radLat);
+    magic = 1 - GCJ_EE * magic * magic;
+    const sqrtMagic = Math.sqrt(magic);
+
+    return {
+        latitude: parsedLat + (dLat * 180.0) / ((GCJ_A * (1 - GCJ_EE)) / (magic * sqrtMagic) * GCJ_PI),
+        longitude: parsedLng + (dLng * 180.0) / (GCJ_A / sqrtMagic * Math.cos(radLat) * GCJ_PI)
+    };
+};
+
 const formatCoord = (lat, lng) => {
     if (!hasCoord(lat, lng)) return '';
     const latDir = lat >= 0 ? 'N' : 'S';
@@ -236,11 +280,12 @@ const getItemDescription = (item) => {
 
 const openMap = (lat, lng) => {
     if (!hasCoord(lat, lng)) return;
+    const point = toGcj02(lat, lng);
     // #ifdef H5
-    window.open(`https://uri.amap.com/marker?position=${lng},${lat}`, '_blank');
+    window.open(`https://uri.amap.com/marker?position=${point.longitude},${point.latitude}`, '_blank');
     // #endif
     // #ifndef H5
-    uni.openLocation({ latitude: parseFloat(lat), longitude: parseFloat(lng) });
+    uni.openLocation({ latitude: point.latitude, longitude: point.longitude });
     // #endif
 };
 
@@ -301,6 +346,24 @@ const collapsedYears = ref({});
 const collapsedMonths = ref({});
 const yearCountMap = ref({});
 const monthCountMap = ref({});
+
+const clearViewerAuth = (toastTitle = '密钥失效') => {
+    viewerKey.value = '';
+    isAuthed.value = false;
+    urlKeyUsed.value = false;
+    uni.removeStorageSync('peanut_viewer_key');
+    if (toastTitle) {
+        uni.showToast({ title: toastTitle, icon: 'none' });
+    }
+};
+
+const handleViewerAuthFailure = (error, toastTitle = '密钥失效') => {
+    if (error && error.message === 'AUTH_FAILED') {
+        clearViewerAuth(toastTitle);
+        return true;
+    }
+    return false;
+};
 
 const getTouchXY = (e) => {
     const touch = (e && e.touches && e.touches[0]) || (e && e.changedTouches && e.changedTouches[0]);
@@ -636,7 +699,9 @@ const loadConfig = async () => {
         }
         uni.setNavigationBarTitle({ title: appConfig.appTitle });
     } catch (e) {
-        console.error("获取配置失败", e);
+        if (!handleViewerAuthFailure(e)) {
+            console.error("获取配置失败", e);
+        }
     }
 };
 
@@ -647,6 +712,9 @@ const loadGroupCounts = async () => {
         yearCountMap.value = (data && data.year_counts) || {};
         monthCountMap.value = (data && data.month_counts) || {};
     } catch (e) {
+        if (e && e.message === 'AUTH_FAILED') {
+            throw e;
+        }
         resetGroupCountMaps();
     }
 };
@@ -717,7 +785,9 @@ const load = async (isRefresh = true) => {
             autoExpandFirstNewMonth(previousMonthKeys);
         }
     } catch (e) {
-        uni.showToast({ title: '加载失败', icon: 'none' });
+        if (!handleViewerAuthFailure(e)) {
+            uni.showToast({ title: '加载失败', icon: 'none' });
+        }
     } finally {
         isLoading.value = false;
     }
@@ -814,27 +884,25 @@ const submitAuthKey = async () => {
 onLoad(() => {
     let key = '';
     let fromUrl = false;
-    let queryKeyDetected = false;
+    let urlKeyDetected = false;
 
     // #ifdef H5
     if (window.location.search) {
         const queryParams = new URLSearchParams(window.location.search);
         if (queryParams.has('key')) {
-            queryKeyDetected = true;
-            const url = new URL(window.location.href);
-            url.searchParams.delete('key');
-            const query = url.searchParams.toString();
-            const cleanUrl = url.pathname + (query ? `?${query}` : '') + url.hash;
-            window.history.replaceState({}, '', cleanUrl);
+            key = (queryParams.get('key') || '').trim();
+            fromUrl = !!key;
+            urlKeyDetected = true;
         }
     }
 
-    if (window.location.hash) {
+    if (!key && window.location.hash) {
         const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
         const hashParams = new URLSearchParams(hash);
         if (hashParams.has('key')) {
             key = (hashParams.get('key') || '').trim();
             fromUrl = !!key;
+            urlKeyDetected = true;
         }
     }
     // #endif
@@ -842,7 +910,7 @@ onLoad(() => {
     if (key) {
         viewerKey.value = key;
         urlKeyUsed.value = fromUrl;
-    } else if (!queryKeyDetected) {
+    } else if (!urlKeyDetected) {
         const stored = uni.getStorageSync('peanut_viewer_key');
         if (stored) {
             viewerKey.value = stored;

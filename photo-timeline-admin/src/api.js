@@ -46,6 +46,8 @@ export const fetchConfig = (apiKey) => {
             success: (res) => {
                 if (res.statusCode === 200) {
                     resolve(res.data);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
                 } else {
                     reject(new Error('获取配置失败'));
                 }
@@ -100,6 +102,8 @@ export const fetchItems = (apiKey, page, limit, search = '') => {
             success: (res) => {
                 if (res.statusCode === 200) {
                     resolve(res.data);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
                 } else {
                     reject(new Error('加载失败'));
                 }
@@ -150,6 +154,8 @@ export const createItem = (apiKey, itemData) => {
             success: (res) => {
                 if (res.statusCode === 200) {
                     resolve(res.data);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
                 } else {
                     reject(new Error('创建失败'));
                 }
@@ -220,6 +226,8 @@ export const restoreItem = (apiKey, id) => {
             success: (res) => {
                 if (res.statusCode === 200) {
                     resolve(res.data);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
                 } else if (res.statusCode === 404) {
                     reject(new Error('条目不在回收站中'));
                 } else {
@@ -243,6 +251,8 @@ export const permanentDeleteItem = (apiKey, id) => {
             success: (res) => {
                 if (res.statusCode === 200) {
                     resolve(res.data);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
                 } else if (res.statusCode === 404) {
                     reject(new Error('条目不存在'));
                 } else {
@@ -266,6 +276,8 @@ export const fetchTrash = (apiKey) => {
             success: (res) => {
                 if (res.statusCode === 200) {
                     resolve(res.data);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
                 } else {
                     reject(new Error('加载失败'));
                 }
@@ -287,8 +299,33 @@ export const emptyTrash = (apiKey) => {
             success: (res) => {
                 if (res.statusCode === 200) {
                     resolve(res.data);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
                 } else {
                     reject(new Error('清空失败'));
+                }
+            },
+            fail: (e) => reject(e)
+        });
+    });
+};
+
+/**
+ * 使用当前坐标系规则重建所有地址缓存
+ */
+export const refreshAddresses = (apiKey) => {
+    return new Promise((resolve, reject) => {
+        uni.request({
+            url: `${API_BASE}/refresh-addresses`,
+            method: 'POST',
+            header: { 'x-api-key': apiKey },
+            success: (res) => {
+                if (res.statusCode === 200) {
+                    resolve(res.data);
+                } else if (res.statusCode === 403) {
+                    reject(new Error('AUTH_FAILED'));
+                } else {
+                    reject(new Error('刷新地址失败'));
                 }
             },
             fail: (e) => reject(e)

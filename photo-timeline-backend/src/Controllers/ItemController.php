@@ -99,9 +99,6 @@ class ItemController {
             $itemsSql = "SELECT * FROM timelineitem WHERE deleted_at IS NULL AND $gidExpr IN ($inQuery) ORDER BY date ASC";
             $rawItems = $this->model->query($itemsSql, $gids);
             
-            // 补全需要逆向解析的地理位置
-            $this->resolveAddresses($rawItems);
-
             // 在 PHP 中进行整合封装
             $grouped = [];
             foreach ($rawItems as $item) {
@@ -227,7 +224,7 @@ class ItemController {
         $hasLat = $lat !== null && $lat !== '';
         $hasLng = $lng !== null && $lng !== '';
         if (!$address && $hasLat && $hasLng) {
-            $address = GeoUtils::resolveAddress($lat, $lng, $this->config['amap_key']);
+            $address = GeoUtils::resolveAddress($lat, $lng, $this->config['amap_key'], $this->config['ssl_verify']);
         }
 
         $groupId = isset($data['group_id']) ? trim((string)$data['group_id']) : '';
@@ -276,24 +273,36 @@ class ItemController {
         }
 
         if (!empty($updateData)) {
-            // 如果存在组 ID，同步更新这个组下所有的 title/description 等同源字段
             if ($this->hasGroupId($target)) {
+                // 组级字段同步到整组；媒体级字段只更新当前记录
                 $targetGroupId = $this->normalizeGroupId($target['group_id']);
-                $subUpdate = [];
-                if (isset($updateData['title'])) $subUpdate['title'] = $updateData['title'];
-                if (isset($updateData['description'])) $subUpdate['description'] = $updateData['description'];
-                if (isset($updateData['date'])) $subUpdate['date'] = $updateData['date'];
-                
-                if (!empty($subUpdate)) {
+                $groupUpdate = [];
+                foreach (['title', 'description', 'date'] as $field) {
+                    if (isset($updateData[$field])) {
+                        $groupUpdate[$field] = $updateData[$field];
+                    }
+                }
+
+                if (!empty($groupUpdate)) {
                     $setClauses = [];
                     $params = [];
-                    foreach ($subUpdate as $field => $value) {
+                    foreach ($groupUpdate as $field => $value) {
                         $setClauses[] = "{$field} = ?";
                         $params[] = $value;
                     }
                     $params[] = $targetGroupId;
                     $sql = "UPDATE timelineitem SET " . implode(', ', $setClauses) . " WHERE group_id = ?";
                     $this->model->query($sql, $params);
+                }
+
+                $itemUpdate = [];
+                foreach (['thumb'] as $field) {
+                    if (isset($updateData[$field])) {
+                        $itemUpdate[$field] = $updateData[$field];
+                    }
+                }
+                if (!empty($itemUpdate)) {
+                    $this->model->update($id, $itemUpdate);
                 }
             } else {
                 $this->model->update($id, $updateData);
@@ -400,23 +409,48 @@ class ItemController {
     }
 
     /**
-     * 辅助方法：自动补全未解析的地理位置
+     * 重建地址缓存 (POST /refresh-addresses)
      */
-    private function resolveAddresses(&$items) {
-        $resolved = 0;
-        foreach ($items as &$item) {
-            if ($resolved >= 2) break;
-            $hasLat = isset($item['latitude']) && $item['latitude'] !== null && $item['latitude'] !== '';
-            $hasLng = isset($item['longitude']) && $item['longitude'] !== null && $item['longitude'] !== '';
-            $missingAddress = !isset($item['address']) || $item['address'] === null || $item['address'] === '';
-            if ($hasLat && $hasLng && $missingAddress) {
-                $address = GeoUtils::resolveAddress($item['latitude'], $item['longitude'], $this->config['amap_key']);
-                if ($address) {
-                    $item['address'] = $address;
-                    $this->model->update($item['id'], ['address' => $address]);
-                    $resolved++;
-                }
-            }
+    public function refreshAddresses() {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
         }
+
+        $items = $this->model->getAddressableItems();
+        $updated = 0;
+        $unchanged = 0;
+        $unresolved = 0;
+
+        foreach ($items as $item) {
+            $address = GeoUtils::resolveAddress(
+                $item['latitude'],
+                $item['longitude'],
+                $this->config['amap_key'],
+                $this->config['ssl_verify']
+            );
+
+            if ($address === null || $address === '') {
+                $unresolved++;
+                continue;
+            }
+
+            $currentAddress = trim((string)($item['address'] ?? ''));
+            if ($currentAddress === $address) {
+                $unchanged++;
+                continue;
+            }
+
+            $this->model->updateAddress($item['id'], $address);
+            $updated++;
+        }
+
+        HttpUtils::jsonResponse([
+            "ok" => true,
+            "total" => count($items),
+            "updated" => $updated,
+            "unchanged" => $unchanged,
+            "unresolved" => $unresolved
+        ]);
     }
+
 }
