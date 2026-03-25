@@ -73,19 +73,34 @@ if (preg_match('/\.(?:png|jpg|jpeg|gif|webp|bmp|mp4|mov|webm)$/', $uri)) {
 /**
  * 验证 API Key
  */
-function verifyKey($config) {
-    $key = null;
+function getRequestKey() {
     if (isset($_SERVER['HTTP_X_API_KEY'])) {
-        $key = $_SERVER['HTTP_X_API_KEY'];
-    } elseif (function_exists('getallheaders')) {
+        return $_SERVER['HTTP_X_API_KEY'];
+    }
+    if (function_exists('getallheaders')) {
         $headers = array_change_key_case(getallheaders(), CASE_LOWER);
         if (isset($headers['x-api-key'])) {
-            $key = $headers['x-api-key'];
+            return $headers['x-api-key'];
         }
     }
+    return null;
+}
 
-    if (!$key || !hash_equals($config['api_secret'], $key)) {
+// 只读接口鉴权：用户密钥或管理员密钥均可
+function verifyKey($config) {
+    $key = getRequestKey();
+    if (!$key ||
+        (!hash_equals($config['api_secret'], $key) &&
+         !hash_equals($config['admin_secret'], $key))) {
         HttpUtils::jsonResponse(["detail" => "无效或缺失的 API Key"], 403);
+    }
+}
+
+// 管理接口鉴权：仅管理员密钥
+function verifyAdminKey($config) {
+    $key = getRequestKey();
+    if (!$key || !hash_equals($config['admin_secret'], $key)) {
+        HttpUtils::jsonResponse(["detail" => "无效或缺失的 API Key，此接口需要管理员密钥"], 403);
     }
 }
 
@@ -104,9 +119,19 @@ $configController = new ConfigController($configModel);
 
 // ============== 路由分发器 ==============
 
-// 白名单无需 Token 或其他特殊处理可在此过滤
-// 其他全部通过 verifyKey 检查
-verifyKey($config);
+// 只读接口：用户密钥或管理员密钥均可
+// 管理接口：仅管理员密钥
+$isReadOnly = (
+    ($uri === '/verify-key' && $method === 'GET') ||
+    (($uri === '/items/' || $uri === '/items') && $method === 'GET') ||
+    (($uri === '/items/counts' || $uri === '/items/counts/') && $method === 'GET') ||
+    (($uri === '/config' || $uri === '/config/') && $method === 'GET')
+);
+if ($isReadOnly) {
+    verifyKey($config);
+} else {
+    verifyAdminKey($config);
+}
 
 if ($uri === '/verify-key' && $method === 'GET') {
     HttpUtils::jsonResponse(["ok" => true]);

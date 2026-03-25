@@ -69,6 +69,7 @@ cp .env.example .env
 
 ```ini
 PEANUT_API_SECRET=your-strong-secret
+PEANUT_ADMIN_SECRET=your-strong-admin-secret
 PEANUT_PRODUCTION=false
 PEANUT_BASE_URL=http://127.0.0.1:8000
 PEANUT_CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
@@ -78,7 +79,8 @@ PEANUT_AMAP_KEY=
 
 参数作用说明：
 
-- `PEANUT_API_SECRET`：API 访问密钥。前端请求时通过 `x-api-key` 传递，建议使用高强度随机字符串。
+- `PEANUT_API_SECRET`：用户端只读密钥。用户端通过 `x-api-key` 传递，仅能访问 `GET /items`、`GET /config` 等只读接口。
+- `PEANUT_ADMIN_SECRET`：管理员密钥。管理端专用，可访问上传、删除、配置修改等写操作接口。未配置时自动降级为与 `PEANUT_API_SECRET` 相同（向后兼容，生产环境强烈建议单独配置）。
 - `PEANUT_PRODUCTION`：是否生产环境。`true` 时后端会隐藏详细错误，仅返回通用错误信息。
 - `PEANUT_BASE_URL`：后端对外访问基准地址。用于生成上传文件的完整访问链接。
 - `PEANUT_CORS_ALLOWED_ORIGINS`：允许跨域访问的前端域名白名单，多个域名用英文逗号分隔。
@@ -154,7 +156,7 @@ npm run buildh5
 - `POST /clear-addresses`
 - `POST /refresh-addresses`
 
-说明：除根路径健康检查外，业务接口都需要请求头 `x-api-key: <PEANUT_API_SECRET>`。
+说明：除根路径健康检查外，业务接口都需要请求头 `x-api-key`。只读接口（`GET /items`、`GET /items/counts`、`GET /config`、`GET /verify-key`）接受用户密钥或管理员密钥；写操作接口仅接受管理员密钥（`PEANUT_ADMIN_SECRET`）。
 
 接口参数（关键）：
 
@@ -210,7 +212,7 @@ npm run buildh5
 
 ## 安全建议
 
-- 使用强密钥并定期轮换 `PEANUT_API_SECRET`
+- 使用强密钥并定期轮换 `PEANUT_API_SECRET` 和 `PEANUT_ADMIN_SECRET`，两者务必设置不同的值
 - 严格配置 `PEANUT_CORS_ALLOWED_ORIGINS`
 - 不要提交以下文件到 GitHub（已在 `.gitignore` 处理）：
 
