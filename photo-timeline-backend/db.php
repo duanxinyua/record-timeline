@@ -102,7 +102,6 @@ try {
     try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN loadMoreText TEXT DEFAULT '上拉加载更多'"); } catch (PDOException $e) {}
     try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN endText TEXT DEFAULT 'THE END'"); } catch (PDOException $e) {}
     try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN takenAtLabel TEXT DEFAULT '拍摄:'"); } catch (PDOException $e) {}
-    try { $pdo->exec("ALTER TABLE timelineitem ADD COLUMN group_id TEXT"); } catch (PDOException $e) {}
 
 } catch (PDOException $e) {
     http_response_code(500);
