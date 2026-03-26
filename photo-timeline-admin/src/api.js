@@ -12,12 +12,12 @@ const API_BASE = import.meta.env.DEV ? '/api' : 'https://api.hetao.us';
 export const getApiBaseUrl = () => API_BASE;
 
 /**
- * 验证 API Key 是否有效
+ * 验证管理员密钥是否有效（仅管理员密钥通过）
  */
 export const verifyKey = (apiKey) => {
     return new Promise((resolve, reject) => {
         uni.request({
-            url: `${API_BASE}/verify-key`,
+            url: `${API_BASE}/verify-admin-key`,
             method: 'GET',
             header: { 'x-api-key': apiKey },
             success: (res) => {

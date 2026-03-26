@@ -137,6 +137,10 @@ if ($uri === '/verify-key' && $method === 'GET') {
     HttpUtils::jsonResponse(["ok" => true]);
 }
 
+if ($uri === '/verify-admin-key' && $method === 'GET') {
+    HttpUtils::jsonResponse(["ok" => true]);
+}
+
 // 业务路由
 if ($uri === '/upload' && $method === 'POST') {
     $uploadController->handleUpload();
