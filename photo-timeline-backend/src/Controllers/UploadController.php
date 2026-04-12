@@ -115,8 +115,14 @@ class UploadController {
             $exifData = [];
 
             // 1. 服务端 EXIF 读取（支持 JPEG 和 TIFF）
-            if (in_array($storedExt, ['jpg', 'jpeg', 'tiff', 'tif']) && function_exists('exif_read_data')) {
-                $exif = @exif_read_data($targetPath, 'ANY_TAG', true);
+            if (in_array($storedExt, ['jpg', 'jpeg', 'tiff', 'tif'], true) && function_exists('exif_read_data')) {
+                $exif = false;
+                try {
+                    $exif = @exif_read_data($targetPath, 'ANY_TAG', true);
+                } catch (\Throwable $e) {
+                    $exif = false;
+                }
+
                 if ($exif) {
                     if (!empty($exif['EXIF']['DateTimeOriginal'])) {
                         $exifData['date'] = $exif['EXIF']['DateTimeOriginal'];

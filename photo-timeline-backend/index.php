@@ -23,6 +23,11 @@ ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
 set_error_handler(function($errno, $errstr, $errfile, $errline) use ($config) {
+    // Respect warnings/notices intentionally silenced with @.
+    if (!(error_reporting() & $errno)) {
+        return true;
+    }
+
     http_response_code(500);
     if (!empty($config['production'])) {
         echo json_encode(['error' => '服务器内部错误']);
