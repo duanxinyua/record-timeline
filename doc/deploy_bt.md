@@ -105,10 +105,12 @@ project-root/
 
 ```ini
 PEANUT_API_SECRET=请设置强密钥
+PEANUT_ADMIN_SECRET=请设置单独的管理员强密钥
 PEANUT_PRODUCTION=true
 PEANUT_BASE_URL=https://api.example.com
 PEANUT_CORS_ALLOWED_ORIGINS=https://www.example.com,https://admin.example.com
 PEANUT_SSL_VERIFY=true
+PEANUT_FFMPEG_BIN=/usr/bin/ffmpeg
 PEANUT_AMAP_KEY=你的高德Web服务Key
 ```
 
@@ -117,6 +119,13 @@ PEANUT_AMAP_KEY=你的高德Web服务Key
 - `PEANUT_DB_FILE` 自定义 SQLite 路径
 - `PEANUT_UPLOAD_DIR` 自定义上传目录
 - `PEANUT_THUMB_MAX_WIDTH`、`PEANUT_THUMB_QUALITY` 调整缩略图策略
+- `PEANUT_VIDEO_TRANSCODE_PRESET`、`PEANUT_VIDEO_TRANSCODE_CRF` 调整视频转码速度/体积平衡
+
+生产环境建议：
+
+- `PEANUT_API_SECRET` 与 `PEANUT_ADMIN_SECRET` 必须使用不同值。前者只给用户端只读接口，后者只给管理端写操作接口。
+- 部署视频上传能力前，先在服务器安装 `ffmpeg`，并在 `.env` 中写入绝对路径，例如 `/usr/bin/ffmpeg`。
+- PHP 8.0 FPM 若设置了 `disable_functions`，至少保留 `proc_open` 或 `exec` 中的一种。
 
 ### 5. 配置 Nginx 伪静态（宝塔面板）
 
@@ -332,6 +341,10 @@ location / {
 
 - 检查后端目录与 `uploads` 权限。
 - 检查 SQLite 文件与目录所有者是否为 `www`。
+- 若只有视频上传失败，先执行 `ffmpeg -version` 确认系统已安装 FFmpeg。
+- 若命令行里有 `ffmpeg`，但后台仍提示未安装，请把 `.env` 的 `PEANUT_FFMPEG_BIN` 改成绝对路径，例如 `/usr/bin/ffmpeg`。
+- 若报命令执行相关错误，检查 PHP 8.0 的 `disable_functions`，确认 `proc_open` 或 `exec` 至少启用一个。
+- 宝塔/PHP-FPM 环境下如果日志出现 `server reached max_children setting`，说明并发已顶满，需要适当上调对应 PHP 版本 FPM 的 `pm.max_children`。
 
 ### 3. 跨域失败
 

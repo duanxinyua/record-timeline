@@ -48,7 +48,8 @@ class MediaUtils {
         $preset = (string)($config['video_transcode_preset'] ?? 'veryfast');
         $crf = (int)($config['video_transcode_crf'] ?? 23);
 
-        if (!self::commandExists($ffmpegBin)) {
+        $resolvedFfmpegBin = self::resolveCommandPath($ffmpegBin);
+        if ($resolvedFfmpegBin === null) {
             throw new \RuntimeException('服务器未安装 ffmpeg，暂时无法自动转换当前视频。');
         }
 
@@ -62,7 +63,7 @@ class MediaUtils {
         @set_time_limit(0);
 
         $command = implode(' ', [
-            escapeshellarg($ffmpegBin),
+            escapeshellarg($resolvedFfmpegBin),
             '-y',
             '-hide_banner',
             '-loglevel', 'error',
@@ -77,12 +78,9 @@ class MediaUtils {
             '-c:a', 'aac',
             '-b:a', '128k',
             escapeshellarg($tmpTargetPath),
-            '2>&1',
         ]);
 
-        $output = [];
-        $exitCode = 0;
-        exec($command, $output, $exitCode);
+        [$output, $exitCode] = self::runCommand($command);
 
         if ($exitCode !== 0 || !is_file($tmpTargetPath) || (int)@filesize($tmpTargetPath) <= 0) {
             @unlink($tmpTargetPath);
@@ -97,18 +95,106 @@ class MediaUtils {
     }
 
     private static function commandExists($command) {
+        return self::resolveCommandPath($command) !== null;
+    }
+
+    private static function resolveCommandPath($command) {
+        $command = trim((string)$command);
         if ($command === '') {
-            return false;
+            return null;
         }
 
-        if (strpos($command, DIRECTORY_SEPARATOR) !== false) {
-            return is_file($command) && is_executable($command);
+        if (strpos($command, DIRECTORY_SEPARATOR) !== false || preg_match('/^[A-Za-z]:[\\\\\\/]/', $command) === 1) {
+            return $command;
         }
 
-        $output = [];
-        $exitCode = 0;
-        exec('command -v ' . escapeshellarg($command) . ' >/dev/null 2>&1', $output, $exitCode);
-        return $exitCode === 0;
+        $pathEnv = getenv('PATH');
+        $searchPaths = ($pathEnv === false || $pathEnv === '')
+            ? ['/usr/local/sbin', '/usr/local/bin', '/usr/sbin', '/usr/bin', '/sbin', '/bin']
+            : explode(PATH_SEPARATOR, $pathEnv);
+
+        $suffixes = [''];
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $pathExt = getenv('PATHEXT');
+            $suffixes = ($pathExt === false || $pathExt === '')
+                ? ['', '.exe', '.bat', '.cmd']
+                : array_merge([''], array_filter(array_map('trim', explode(';', strtolower($pathExt)))));
+        }
+
+        foreach ($searchPaths as $dir) {
+            $dir = rtrim((string)$dir, "\\/");
+            if ($dir === '') {
+                continue;
+            }
+
+            foreach ($suffixes as $suffix) {
+                $candidate = $dir . DIRECTORY_SEPARATOR . $command . $suffix;
+                if (@is_file($candidate) && @is_executable($candidate)) {
+                    return $candidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static function runCommand($command) {
+        $command = trim((string)$command);
+        if ($command === '') {
+            throw new \RuntimeException('服务器命令执行参数无效，暂时无法自动转换当前视频。');
+        }
+
+        if (\function_exists('proc_open')) {
+            $pipes = [];
+            $process = @\proc_open($command, [
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ], $pipes);
+
+            if (\is_resource($process)) {
+                $stdout = '';
+                $stderr = '';
+
+                try {
+                    $stdout = isset($pipes[1]) ? (string)\stream_get_contents($pipes[1]) : '';
+                    $stderr = isset($pipes[2]) ? (string)\stream_get_contents($pipes[2]) : '';
+                } finally {
+                    foreach ($pipes as $pipe) {
+                        if (\is_resource($pipe)) {
+                            \fclose($pipe);
+                        }
+                    }
+                }
+
+                $exitCode = \proc_close($process);
+                return [self::splitCommandOutput($stdout . "\n" . $stderr), (int)$exitCode];
+            }
+        }
+
+        if (\function_exists('exec')) {
+            $output = [];
+            $exitCode = 0;
+            \exec($command . ' 2>&1', $output, $exitCode);
+            return [$output, (int)$exitCode];
+        }
+
+        throw new \RuntimeException('服务器禁用了命令执行能力，暂时无法自动转换当前视频。');
+    }
+
+    private static function splitCommandOutput($output) {
+        $output = trim((string)$output);
+        if ($output === '') {
+            return [];
+        }
+
+        $lines = preg_split('/\r\n|\r|\n/', $output);
+        if (!is_array($lines)) {
+            return [$output];
+        }
+
+        return array_values(array_filter(array_map('trim', $lines), static function ($line) {
+            return $line !== '';
+        }));
     }
 
     private static function readMoovAtom($filepath, $maxBytes) {
