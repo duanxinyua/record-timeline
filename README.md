@@ -120,16 +120,16 @@ npm run dev:h5
 ```bash
 # 管理端
 cd photo-timeline-admin
-npm install
-npm run buildh5
+npm ci
+npm run build:h5
 
 # 用户端
 cd ../photo-timeline-uniapp
-npm install
-npm run buildh5
+npm ci
+npm run build:h5
 ```
 
-说明：`buildh5` 已在两个前端 `package.json` 中提供，等价于 `npm run build:h5`。
+说明：文档这里使用标准脚本名 `build:h5`。项目里也保留了 `buildh5` 别名，效果相同。
 
 输出目录：
 
