@@ -5,6 +5,7 @@ use App\Models\TimelineItem;
 use App\Utils\HttpUtils;
 use App\Utils\GeoUtils;
 use App\Utils\ImageUtils;
+use App\Utils\UploadTracker;
 
 class ItemController {
     protected $model;
@@ -25,6 +26,14 @@ class ItemController {
 
     private function hasGroupId(array $item): bool {
         return isset($item['group_id']) && $this->normalizeGroupId($item['group_id']) !== '';
+    }
+
+    private function claimUploadedUrls(array $urls): void {
+        try {
+            UploadTracker::claimUrls($urls, $this->config);
+        } catch (\Throwable $e) {
+            error_log('Pending upload claim failed: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -55,6 +64,8 @@ class ItemController {
         $page = isset($_GET['page']) ? (int)$_GET['page'] : 0;
         $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 0;
         $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+        $page = max(0, $page);
+        $limit = max(0, $limit);
 
         $baseWhere = "deleted_at IS NULL";
         $params = [];
@@ -69,15 +80,19 @@ class ItemController {
 
         // 依靠分组表达式获取独立的"动态帖子"
         $groupSql = "SELECT $gidExpr as gid, MAX(date) as gdate FROM timelineitem WHERE $baseWhere GROUP BY $gidExpr ORDER BY gdate DESC";
+        $groupListParams = $params;
         
         if ($page > 0 && $limit > 0) {
+            $limit = min($limit, 100);
             $offset = ($page - 1) * $limit;
-            $groupListSql = $groupSql . " LIMIT $limit OFFSET $offset";
+            $groupListSql = $groupSql . " LIMIT :limit OFFSET :offset";
+            $groupListParams[':limit'] = $limit;
+            $groupListParams[':offset'] = $offset;
         } else {
             $groupListSql = $groupSql;
         }
 
-        $groups = $this->model->query($groupListSql, $params);
+        $groups = $this->model->query($groupListSql, $groupListParams);
 
         // 计算总动态数
         $countSql = "SELECT COUNT(DISTINCT $gidExpr) as total FROM timelineitem WHERE $baseWhere";
@@ -246,6 +261,7 @@ class ItemController {
         ];
 
         $id = $this->model->insert($insertData);
+        $this->claimUploadedUrls([$insertData['src'], $insertData['thumb'] ?? null]);
         $data['id'] = (int)$id;
         $data['address'] = $address;
         $data['group_id'] = $groupId;
@@ -303,9 +319,15 @@ class ItemController {
                 }
                 if (!empty($itemUpdate)) {
                     $this->model->update($id, $itemUpdate);
+                    if (isset($itemUpdate['thumb'])) {
+                        $this->claimUploadedUrls([$itemUpdate['thumb']]);
+                    }
                 }
             } else {
                 $this->model->update($id, $updateData);
+                if (isset($updateData['thumb'])) {
+                    $this->claimUploadedUrls([$updateData['thumb']]);
+                }
             }
         }
 

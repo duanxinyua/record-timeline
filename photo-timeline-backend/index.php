@@ -11,6 +11,7 @@ use App\Models\AppConfig;
 use App\Controllers\ItemController;
 use App\Controllers\UploadController;
 use App\Controllers\ConfigController;
+use App\Utils\UploadTracker;
 
 // 加载配置
 $config = require __DIR__ . '/config.php';
@@ -119,8 +120,14 @@ $itemModel = new TimelineItem($pdo);
 $configModel = new AppConfig($pdo);
 
 $itemController = new ItemController($itemModel, $config);
-$uploadController = new UploadController($config);
+$uploadController = new UploadController($config, $itemModel);
 $configController = new ConfigController($configModel);
+
+try {
+    UploadTracker::cleanupExpired($config, $itemModel, false);
+} catch (Throwable $e) {
+    error_log('Pending upload cleanup failed: ' . $e->getMessage());
+}
 
 // ============== 路由分发器 ==============
 
@@ -149,6 +156,21 @@ if ($uri === '/verify-admin-key' && $method === 'GET') {
 // 业务路由
 if ($uri === '/upload' && $method === 'POST') {
     $uploadController->handleUpload();
+}
+elseif ($uri === '/upload/init' && $method === 'POST') {
+    $uploadController->handleChunkInit();
+}
+elseif ($uri === '/upload/chunk' && $method === 'POST') {
+    $uploadController->handleChunkUpload();
+}
+elseif ($uri === '/upload/complete' && $method === 'POST') {
+    $uploadController->handleChunkComplete();
+}
+elseif (($uri === '/upload/status' || $uri === '/upload/status/') && $method === 'GET') {
+    $uploadController->handleChunkStatus();
+}
+elseif (($uri === '/upload/cleanup' || $uri === '/upload/cleanup/') && $method === 'POST') {
+    $uploadController->handleCleanup();
 }
 elseif (($uri === '/items/' || $uri === '/items') && $method === 'GET') {
     $itemController->getList();

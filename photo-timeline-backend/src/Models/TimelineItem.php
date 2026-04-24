@@ -56,6 +56,38 @@ class TimelineItem extends Model {
     }
 
     /**
+     * 查出当前数据库仍在引用的媒体 URL（包含 src 和 thumb，含回收站）
+     */
+    public function getReferencedMediaUrls(array $urls) {
+        $normalized = [];
+        foreach ($urls as $url) {
+            $value = trim((string)$url);
+            if ($value !== '') {
+                $normalized[$value] = true;
+            }
+        }
+
+        $normalizedUrls = array_keys($normalized);
+        if (empty($normalizedUrls)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($normalizedUrls), '?'));
+        $sql = "
+            SELECT src AS url FROM {$this->table} WHERE src IN ($placeholders)
+            UNION
+            SELECT thumb AS url FROM {$this->table} WHERE thumb IN ($placeholders)
+        ";
+
+        $params = array_merge($normalizedUrls, $normalizedUrls);
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        return array_values(array_filter(array_unique(array_column($rows, 'url'))));
+    }
+
+    /**
      * 清空回收站
      */
     public function emptyTrash() {

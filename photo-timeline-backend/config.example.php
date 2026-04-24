@@ -49,11 +49,14 @@ return [
     // 生产环境中强烈建议通过 PEANUT_API_SECRET 环境变量来动态注入，避免硬编码
     'api_secret' => getenv('PEANUT_API_SECRET') ?: 'replace-with-strong-secret',
 
+    // 管理员密钥（写操作专用）。未设置时回退到 api_secret 以兼容旧部署。
+    'admin_secret' => getenv('PEANUT_ADMIN_SECRET') ?: (getenv('PEANUT_API_SECRET') ?: 'replace-with-strong-secret'),
+
     // 生产环境标记（true = 生产环境，false = 本地开发环境）
     'production' => $envBool('PEANUT_PRODUCTION', false),
 
-    // SQLite 数据库文件的存放路径（默认为后端根目录下的 timeline.db）
-    'db_file' => getenv('PEANUT_DB_FILE') ?: (__DIR__ . '/timeline.db'),
+    // SQLite 数据库文件的存放路径（默认放到后端 Web 根目录外的项目级 data 目录）
+    'db_file' => getenv('PEANUT_DB_FILE') ?: (dirname(__DIR__) . '/data/timeline.db'),
 
     // ----------------------------------------------------------------------
     // 资源与网络配置
@@ -87,11 +90,26 @@ return [
     // FFmpeg 可执行文件路径
     'ffmpeg_bin' => getenv('PEANUT_FFMPEG_BIN') ?: 'ffmpeg',
 
+    // PHP CLI 可执行文件路径（用于后台处理分片视频）
+    'php_cli_bin' => getenv('PEANUT_PHP_CLI_BIN') ?: '',
+
+    // 分片上传临时目录（建议放系统盘，不要放到网盘挂载目录）
+    'chunk_tmp_dir' => getenv('PEANUT_CHUNK_TMP_DIR') ?: (rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'peanut-timeline-chunks'),
+
+    // 上传成功但尚未提交入库的跟踪目录
+    'pending_upload_dir' => getenv('PEANUT_PENDING_UPLOAD_DIR') ?: (rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'peanut-timeline-pending'),
+
+    // 视频处理本地临时目录
+    'video_tmp_dir' => getenv('PEANUT_VIDEO_TMP_DIR') ?: (rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'peanut-timeline-video'),
+
     // 视频转码 preset
     'video_transcode_preset' => getenv('PEANUT_VIDEO_TRANSCODE_PRESET') ?: 'veryfast',
 
     // 视频转码 CRF（越小越清晰，体积越大）
     'video_transcode_crf' => (int)(getenv('PEANUT_VIDEO_TRANSCODE_CRF') ?: 23),
+
+    // 视频转码线程数（低配机器建议 1）
+    'video_transcode_threads' => max(1, (int)(getenv('PEANUT_VIDEO_TRANSCODE_THREADS') ?: 1)),
 
     // 高德地图 Web Service API Key
     // 用于自动将照片中提取的 GPS 经纬度坐标反解析为具体的中文地址（省市区街道）

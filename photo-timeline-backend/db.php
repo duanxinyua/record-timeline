@@ -6,7 +6,19 @@
 $config = require __DIR__ . '/config.php';
 
 $dbFile = $config['db_file'];
+$dbDir = dirname($dbFile);
 $uploadDir = $config['upload_dir'];
+
+function peanutTimelineEnsureColumns(PDO $pdo, string $table, array $columns): void {
+    $existingRows = $pdo->query("PRAGMA table_info({$table})")->fetchAll();
+    $existingColumns = array_column($existingRows, 'name');
+
+    foreach ($columns as $column => $definition) {
+        if (!in_array($column, $existingColumns, true)) {
+            $pdo->exec("ALTER TABLE {$table} ADD COLUMN {$column} {$definition}");
+        }
+    }
+}
 
 // 确保上传目录存在
 if (!file_exists($uploadDir)) {
@@ -17,6 +29,20 @@ if (!file_exists($uploadDir)) {
     }
 }
 
+// 确保数据库目录存在并可写。SQLite WAL 会在同目录创建 -wal/-shm 文件。
+if (!file_exists($dbDir)) {
+    if (!@mkdir($dbDir, 0755, true)) {
+        http_response_code(500);
+        echo json_encode(['error' => '无法创建数据库目录，请检查目录权限']);
+        exit;
+    }
+}
+if (!is_dir($dbDir) || !is_writable($dbDir)) {
+    http_response_code(500);
+    echo json_encode(['error' => '数据库目录不可写，请检查目录权限']);
+    exit;
+}
+
 try {
     $pdo = new PDO('sqlite:' . $dbFile);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -24,6 +50,8 @@ try {
 
     // 启用 WAL 模式提升并发性能
     $pdo->exec("PRAGMA journal_mode=WAL");
+    $pdo->exec("PRAGMA synchronous=NORMAL");
+    $pdo->exec("PRAGMA busy_timeout=5000");
 
     // 创建表
     $pdo->exec("
@@ -94,14 +122,22 @@ try {
         $pdo->exec("INSERT INTO appconfig (id) VALUES (1)");
     }
 
-    // 新增列迁移（幂等，已存在则忽略）
-    try { $pdo->exec("ALTER TABLE timelineitem ADD COLUMN address TEXT"); } catch (PDOException $e) {}
-    try { $pdo->exec("ALTER TABLE timelineitem ADD COLUMN description TEXT"); } catch (PDOException $e) {}
-    try { $pdo->exec("ALTER TABLE timelineitem ADD COLUMN deleted_at TEXT"); } catch (PDOException $e) {}
-    try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN loadingText TEXT DEFAULT '加载中...'"); } catch (PDOException $e) {}
-    try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN loadMoreText TEXT DEFAULT '上拉加载更多'"); } catch (PDOException $e) {}
-    try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN endText TEXT DEFAULT 'THE END'"); } catch (PDOException $e) {}
-    try { $pdo->exec("ALTER TABLE appconfig ADD COLUMN takenAtLabel TEXT DEFAULT '拍摄:'"); } catch (PDOException $e) {}
+    // 新增列迁移（幂等，先检查再 ALTER，避免每次请求依赖异常控制流）
+    peanutTimelineEnsureColumns($pdo, 'timelineitem', [
+        'address' => 'TEXT',
+        'description' => 'TEXT',
+        'deleted_at' => 'TEXT',
+    ]);
+    peanutTimelineEnsureColumns($pdo, 'appconfig', [
+        'loadingText' => "TEXT DEFAULT '加载中...'",
+        'loadMoreText' => "TEXT DEFAULT '上拉加载更多'",
+        'endText' => "TEXT DEFAULT 'THE END'",
+        'takenAtLabel' => "TEXT DEFAULT '拍摄:'",
+    ]);
+
+    // 依赖迁移列的查询索引，放在列补齐之后创建。
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_timelineitem_deleted_date ON timelineitem(deleted_at, date DESC)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_timelineitem_active_group_date ON timelineitem(deleted_at, COALESCE(NULLIF(group_id, ''), CAST(id AS TEXT)), date DESC)");
 
 } catch (PDOException $e) {
     http_response_code(500);

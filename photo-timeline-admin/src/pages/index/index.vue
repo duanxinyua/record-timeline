@@ -118,6 +118,9 @@
         <view class="hint">
           <text>退出后需重新访问链接登录。</text>
         </view>
+        <view class="hint" v-if="pendingServerUploadCount > 0">
+          <text>有 {{ pendingServerUploadCount }} 个视频正在后台处理中，处理完成后会自动加入待发布列表。</text>
+        </view>
       </view>
 
       <!-- 未登录状态 -->
@@ -497,11 +500,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, reactive } from 'vue';
-import { onLoad, onPageScroll, onReachBottom } from '@dcloudio/uni-app';
+import { ref, computed, onMounted, onBeforeUnmount, reactive } from 'vue';
+import { onLoad, onUnload, onPageScroll, onReachBottom } from '@dcloudio/uni-app';
 import { formatDate, isVideo, previewImage } from '../../utils.js';
 import * as api from '../../api.js';
 import { extractMetadata } from '../../exif.js';
+
+const LARGE_VIDEO_THRESHOLD_BYTES = 50 * 1024 * 1024;
+const PENDING_UPLOAD_CLEANUP_STORAGE_KEY = 'peanut_pending_upload_cleanup_urls';
 
 // ==================== 状态 ====================
 
@@ -533,6 +539,9 @@ const descriptionValue = ref('');
 const items = ref([]);
 const batchList = ref([]);
 const adminKey = ref('');
+const pendingCleanupUrls = ref([]);
+const pendingServerUploadCount = ref(0);
+const pendingUploadBatchToken = ref(0);
 
 // 搜索状态
 const searchQuery = ref('');
@@ -580,6 +589,77 @@ const handleAdminAuthFailure = (error, toastTitle = '密钥失效') => {
         return true;
     }
     return false;
+};
+
+const normalizeCleanupUrls = (urls) => {
+    if (!Array.isArray(urls)) return [];
+    return Array.from(new Set(
+        urls
+            .map((url) => (typeof url === 'string' ? url.trim() : ''))
+            .filter(Boolean)
+    ));
+};
+
+const persistPendingCleanupUrls = () => {
+    const urls = normalizeCleanupUrls(pendingCleanupUrls.value);
+    pendingCleanupUrls.value = urls;
+    uni.setStorageSync(PENDING_UPLOAD_CLEANUP_STORAGE_KEY, urls);
+};
+
+const loadPendingCleanupUrls = () => {
+    const stored = uni.getStorageSync(PENDING_UPLOAD_CLEANUP_STORAGE_KEY);
+    pendingCleanupUrls.value = normalizeCleanupUrls(Array.isArray(stored) ? stored : []);
+};
+
+const registerPendingCleanupUrls = (urls) => {
+    pendingCleanupUrls.value = normalizeCleanupUrls([
+        ...pendingCleanupUrls.value,
+        ...normalizeCleanupUrls(urls)
+    ]);
+    persistPendingCleanupUrls();
+};
+
+const forgetPendingCleanupUrls = (urls) => {
+    const removeSet = new Set(normalizeCleanupUrls(urls));
+    if (removeSet.size === 0) return;
+
+    pendingCleanupUrls.value = pendingCleanupUrls.value.filter((url) => !removeSet.has(url));
+    persistPendingCleanupUrls();
+};
+
+const getAdminApiKey = () => adminKey.value || uni.getStorageSync('peanut_api_key') || '';
+
+const cleanupUploadedUrls = async (urls, { silent = true, keepalive = false } = {}) => {
+    const normalizedUrls = normalizeCleanupUrls(urls);
+    if (normalizedUrls.length === 0) {
+        return { requested: 0, deleted: 0, missing: 0, referenced: 0 };
+    }
+
+    const key = getAdminApiKey();
+    if (!key) {
+        return null;
+    }
+
+    try {
+        const result = await api.cleanupUploadedFiles(key, normalizedUrls, { keepalive });
+        forgetPendingCleanupUrls(normalizedUrls);
+        return result;
+    } catch (error) {
+        if (!silent) {
+            if (!handleAdminAuthFailure(error)) {
+                uni.showToast({ title: '清理未提交文件失败', icon: 'none' });
+            }
+        }
+        throw error;
+    }
+};
+
+const flushPendingCleanup = async (options = {}) => {
+    if (pendingCleanupUrls.value.length === 0) {
+        return { requested: 0, deleted: 0, missing: 0, referenced: 0 };
+    }
+
+    return cleanupUploadedUrls(pendingCleanupUrls.value, options);
 };
 
 const getTouchXY = (e) => {
@@ -1001,14 +1081,43 @@ const revokeBlobUrl = (url) => {
     // #endif
 };
 
-// ==================== 文件上传 ====================
+const collectBatchCleanupUrls = (entries) => normalizeCleanupUrls(
+    (Array.isArray(entries) ? entries : []).flatMap((entry) => Array.isArray(entry && entry.cleanupUrls) ? entry.cleanupUrls : [])
+);
 
-const clearSelection = () => {
-    batchList.value = [];
+const invalidatePendingUploadBatch = () => {
+    pendingUploadBatchToken.value += 1;
 };
 
-const removeFromBatch = (index) => {
-    batchList.value.splice(index, 1);
+const isPendingUploadBatchActive = (token) => pendingUploadBatchToken.value === token;
+
+// ==================== 文件上传 ====================
+
+const clearSelection = async () => {
+    invalidatePendingUploadBatch();
+    const urls = collectBatchCleanupUrls(batchList.value);
+    batchList.value = [];
+    persistPendingCleanupUrls();
+    if (urls.length > 0) {
+        try {
+            await cleanupUploadedUrls(urls, { silent: false });
+        } catch (e) {
+            // 保留待清理列表到本地，后续登录或刷新时继续补清理
+        }
+    }
+};
+
+const removeFromBatch = async (index) => {
+    const [removed] = batchList.value.splice(index, 1);
+    const urls = collectBatchCleanupUrls(removed ? [removed] : []);
+    persistPendingCleanupUrls();
+    if (urls.length > 0) {
+        try {
+            await cleanupUploadedUrls(urls, { silent: false });
+        } catch (e) {
+            // 保留待清理列表到本地，后续登录或刷新时继续补清理
+        }
+    }
 };
 
 const showAddMenu = () => {
@@ -1059,74 +1168,172 @@ const captureVideoFrame = (file) => {
     // #endif
 };
 
-const uploadOneFile = async (item) => {
+const showUploadLoading = (current, total, extra = '') => {
+    const suffix = extra ? ` ${extra}` : '';
+    uni.showLoading({ title: `上传 ${current}/${total}${suffix}` });
+};
+
+const shouldUseChunkUpload = (item) => {
+    if (!item || typeof item !== 'object') return false;
+    if (item.type !== 'video') return false;
+
+    const fileObj = item.file;
+    return !!(fileObj && typeof fileObj.slice === 'function' && Number(fileObj.size || 0) >= LARGE_VIDEO_THRESHOLD_BYTES);
+};
+
+const uploadOneFile = async (item, index = 0, total = 1) => {
     const filePath = typeof item === 'string' ? item : (item.path || item.src);
     const fileObj = typeof item === 'string' ? null : item.file;
     const clientExif = (typeof item === 'object') ? item.clientExif : null;
 
     try {
-        const data = await api.uploadFile(adminKey.value, filePath, fileObj, clientExif);
+        let data;
+        if (shouldUseChunkUpload(item)) {
+            showUploadLoading(index, total, '分片初始化');
+            data = await api.uploadLargeVideoInChunks(
+                adminKey.value,
+                fileObj,
+                clientExif,
+                { awaitProcessing: false },
+                ({ progress, message }) => {
+                    if (message) {
+                        showUploadLoading(index, total, message);
+                        return;
+                    }
+                    const percent = Math.max(1, Math.min(100, Math.round((progress || 0) * 100)));
+                    showUploadLoading(index, total, `${percent}%`);
+                }
+            );
+        } else {
+            data = await api.uploadFile(adminKey.value, filePath, fileObj, clientExif);
+        }
         return data;
     } catch (error) {
-        if (error.message === 'AUTH_FAILED') {
-            uni.showToast({ title: '密钥失效', icon: 'none' });
-            adminKey.value = '';
-            uni.removeStorageSync('peanut_api_key');
-        }
         throw error;
+    }
+};
+
+const appendUploadedMediaToBatch = async (data, sourceItem, apiKey, batchToken = pendingUploadBatchToken.value) => {
+    if (!data || !data.url) {
+        throw new Error('上传结果无效');
+    }
+    if (!isPendingUploadBatchActive(batchToken)) {
+        return false;
+    }
+
+    if (isVideo(data.url) && !data.thumb) {
+        const fileObj = (typeof sourceItem === 'object') ? sourceItem.file : null;
+        if (fileObj) {
+            const frameFile = await captureVideoFrame(fileObj);
+            if (frameFile) {
+                if (!isPendingUploadBatchActive(batchToken)) {
+                    return false;
+                }
+                let frameUrl = '';
+                try {
+                    frameUrl = URL.createObjectURL(frameFile);
+                    const thumbData = await api.uploadFile(apiKey, frameUrl, frameFile, null, { skipThumb: true });
+                    data.thumb = thumbData.url;
+                } catch (e) {
+                    // 截帧上传失败不影响主流程
+                } finally {
+                    revokeBlobUrl(frameUrl);
+                }
+            }
+        }
+    }
+
+    const cleanupUrls = normalizeCleanupUrls([data.url, data.thumb]);
+    registerPendingCleanupUrls(cleanupUrls);
+
+    batchList.value.push({
+        src: data.url,
+        thumb: data.thumb,
+        name: data.filename || 'media',
+        exif: data.exif,
+        cleanupUrls
+    });
+
+    return true;
+};
+
+const waitForBackgroundProcessedUpload = async (processingData, sourceItem, apiKey, batchToken) => {
+    pendingServerUploadCount.value += 1;
+    try {
+        const completedData = await api.waitForLargeUploadProcessing(
+            apiKey,
+            processingData.uploadId,
+            processingData.totalChunks
+        );
+
+        if (!isPendingUploadBatchActive(batchToken)) {
+            await cleanupUploadedUrls([completedData && completedData.url, completedData && completedData.thumb], {
+                silent: true
+            });
+            return;
+        }
+
+        const appended = await appendUploadedMediaToBatch(completedData, sourceItem, apiKey, batchToken);
+        if (!appended) {
+            await cleanupUploadedUrls([completedData && completedData.url, completedData && completedData.thumb], {
+                silent: true
+            });
+            return;
+        }
+        uni.showToast({ title: '视频处理完成', icon: 'none' });
+    } catch (error) {
+        if (!handleAdminAuthFailure(error)) {
+            uni.showToast({ title: error.message || '视频处理失败', icon: 'none' });
+        }
+    } finally {
+        pendingServerUploadCount.value = Math.max(0, pendingServerUploadCount.value - 1);
+        if (sourceItem && typeof sourceItem === 'object' && sourceItem.path) {
+            revokeBlobUrl(sourceItem.path);
+        }
     }
 };
 
 const handleBatchUpload = async (filePaths) => {
     if (!filePaths || filePaths.length === 0) return;
 
-    uni.showLoading({ title: `正在上传 0/${filePaths.length}` });
+    const batchToken = pendingUploadBatchToken.value;
+    showUploadLoading(0, filePaths.length);
 
     try {
         for (let i = 0; i < filePaths.length; i++) {
             const sourceItem = filePaths[i];
+            let keepSourceItemForBackground = false;
+            const requestApiKey = adminKey.value;
             try {
-                uni.showLoading({ title: `正在上传 ${i+1}/${filePaths.length}` });
-                const data = await uploadOneFile(sourceItem);
-
-                // 视频无缩略图时，客户端截帧并上传
-                if (isVideo(data.url) && !data.thumb) {
-                    const fileObj = (typeof sourceItem === 'object') ? sourceItem.file : null;
-                    if (fileObj) {
-                        const frameFile = await captureVideoFrame(fileObj);
-                        if (frameFile) {
-                            let frameUrl = '';
-                            try {
-                                frameUrl = URL.createObjectURL(frameFile);
-                                const thumbData = await api.uploadFile(adminKey.value, frameUrl, frameFile, null, { skipThumb: true });
-                                data.thumb = thumbData.url;
-                            } catch (e) {
-                                // 截帧上传失败不影响主流程
-                            } finally {
-                                revokeBlobUrl(frameUrl);
-                            }
-                        }
-                    }
+                showUploadLoading(i + 1, filePaths.length);
+                const data = await uploadOneFile(sourceItem, i + 1, filePaths.length);
+                if (data && data.processing) {
+                    keepSourceItemForBackground = true;
+                    waitForBackgroundProcessedUpload(data, sourceItem, requestApiKey, batchToken);
+                    continue;
                 }
 
-                batchList.value.push({
-                    src: data.url,
-                    thumb: data.thumb,
-                    name: data.filename || 'media',
-                    exif: data.exif
-                });
+                const appended = await appendUploadedMediaToBatch(data, sourceItem, requestApiKey, batchToken);
+                if (!appended) {
+                    await cleanupUploadedUrls([data && data.url, data && data.thumb], { silent: true });
+                }
             } finally {
-                if (sourceItem && typeof sourceItem === 'object' && sourceItem.path) {
+                if (!keepSourceItemForBackground && sourceItem && typeof sourceItem === 'object' && sourceItem.path) {
                     revokeBlobUrl(sourceItem.path);
                 }
             }
         }
 
         if (batchList.value.length > 0) {
-            uni.showToast({ title: '上传完成', icon: 'success' });
+            const title = pendingServerUploadCount.value > 0 ? '上传已提交，后台处理中' : '上传完成';
+            uni.showToast({ title, icon: pendingServerUploadCount.value > 0 ? 'none' : 'success' });
+        } else if (pendingServerUploadCount.value > 0) {
+            uni.showToast({ title: '上传已提交，后台处理中', icon: 'none' });
         }
     } catch (e) {
-        uni.showToast({ title: e.message || '上传出错', icon: 'none' });
+        if (!handleAdminAuthFailure(e)) {
+            uni.showToast({ title: e.message || '上传出错', icon: 'none' });
+        }
     } finally {
         uni.hideLoading();
     }
@@ -1183,6 +1390,10 @@ const chooseMedia = () => {
 // ==================== 条目管理 ====================
 
 const addItems = async () => {
+    if (pendingServerUploadCount.value > 0) {
+        uni.showToast({ title: `仍有 ${pendingServerUploadCount.value} 个视频处理中`, icon: 'none' });
+        return;
+    }
     if (batchList.value.length === 0) {
         uni.showToast({ title: '请先选择照片', icon: 'none' });
         return;
@@ -1199,6 +1410,7 @@ const addItems = async () => {
 
     const baseDate = new Date(finalDateStr);
     uni.showLoading({ title: '正在发布...' });
+    let createdCount = 0;
 
     try {
         const groupId = Date.now().toString() + '-' + Math.random().toString(36).substr(2, 5);
@@ -1230,17 +1442,39 @@ const addItems = async () => {
             };
 
             await api.createItem(adminKey.value, newItem);
+            createdCount++;
+            forgetPendingCleanupUrls(item.cleanupUrls);
         }
 
         uni.showToast({ title: '全部发布成功', icon: 'success' });
         descriptionValue.value = '';
         batchList.value = [];
+        invalidatePendingUploadBatch();
         
         // 重新拉取以呈现聚合并组的动态新结构
-        load(true);
+        await load(true);
     } catch (e) {
+        const orphanUrls = pendingCleanupUrls.value.slice();
+        batchList.value = [];
+        invalidatePendingUploadBatch();
+        if (createdCount > 0) {
+            descriptionValue.value = '';
+        }
+
+        if (orphanUrls.length > 0) {
+            try {
+                await cleanupUploadedUrls(orphanUrls, { silent: true });
+            } catch (cleanupError) {
+                // 已保留在本地待清理列表里，等待后续补清理
+            }
+        }
+
+        await load(true);
         if (!handleAdminAuthFailure(e)) {
-            uni.showToast({ title: '发布过程中出错', icon: 'none' });
+            const message = createdCount > 0
+                ? `已发布 ${createdCount} 条，未提交文件已清理`
+                : '发布失败，未提交文件已清理';
+            uni.showToast({ title: message, icon: 'none' });
         }
     } finally {
         uni.hideLoading();
@@ -1501,11 +1735,22 @@ const generateMissingThumbs = async () => {
             const frameFile = await captureFrameFromUrl(media.src);
             if (frameFile) {
                 let frameUrl = '';
+                let uploadedThumbUrl = '';
                 try {
                     frameUrl = URL.createObjectURL(frameFile);
                     const thumbData = await api.uploadFile(adminKey.value, frameUrl, frameFile, null, { skipThumb: true });
+                    uploadedThumbUrl = thumbData && thumbData.url ? thumbData.url : '';
                     await api.updateItem(adminKey.value, media.id, { thumb: thumbData.url });
+                    uploadedThumbUrl = '';
                 } finally {
+                    if (uploadedThumbUrl) {
+                        try {
+                            await cleanupUploadedUrls([uploadedThumbUrl], { silent: true });
+                        } catch (cleanupError) {
+                            // 保留到待清理列表中，稍后补清理
+                            registerPendingCleanupUrls([uploadedThumbUrl]);
+                        }
+                    }
                     revokeBlobUrl(frameUrl);
                 }
                 success++;
@@ -1652,8 +1897,15 @@ const logout = () => {
     uni.showModal({
         title: '确认退出',
         content: '退出后将无法上传和删除，确定吗？',
-        success: (res) => {
+        success: async (res) => {
             if (res.confirm) {
+                invalidatePendingUploadBatch();
+                try {
+                    await flushPendingCleanup({ silent: true });
+                } catch (e) {
+                    // 失败时继续退出，并保留本地待清理列表供后续补清理
+                }
+                batchList.value = [];
                 adminKey.value = '';
                 uni.removeStorageSync('peanut_api_key');
                 uni.showToast({ title: '已退出管理员模式', icon: 'none' });
@@ -1808,12 +2060,18 @@ const clearSearch = () => {
 
 // ==================== 生命周期 ====================
 
+const handleWindowBeforeUnload = () => {
+    flushPendingCleanup({ silent: true, keepalive: true }).catch(() => {});
+};
+
 const initAfterAuth = () => {
+    flushPendingCleanup({ silent: true }).catch(() => {});
     loadConfig();
     load();
 };
 
 onLoad(() => {
+    loadPendingCleanupUrls();
     let key = '';
     let keyFromUrl = false;
     let urlKeyDetected = false;
@@ -1898,6 +2156,22 @@ onMounted(() => {
     const now = new Date();
     dateValue.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     timeValue.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    // #ifdef H5
+    window.addEventListener('beforeunload', handleWindowBeforeUnload);
+    window.addEventListener('pagehide', handleWindowBeforeUnload);
+    // #endif
+});
+
+onUnload(() => {
+    flushPendingCleanup({ silent: true }).catch(() => {});
+});
+
+onBeforeUnmount(() => {
+    // #ifdef H5
+    window.removeEventListener('beforeunload', handleWindowBeforeUnload);
+    window.removeEventListener('pagehide', handleWindowBeforeUnload);
+    // #endif
 });
 </script>
 

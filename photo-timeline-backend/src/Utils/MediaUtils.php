@@ -47,6 +47,7 @@ class MediaUtils {
         $ffmpegBin = (string)($config['ffmpeg_bin'] ?? 'ffmpeg');
         $preset = (string)($config['video_transcode_preset'] ?? 'veryfast');
         $crf = (int)($config['video_transcode_crf'] ?? 23);
+        $threads = max(1, (int)($config['video_transcode_threads'] ?? 1));
 
         $resolvedFfmpegBin = self::resolveCommandPath($ffmpegBin);
         if ($resolvedFfmpegBin === null) {
@@ -57,7 +58,7 @@ class MediaUtils {
             throw new \RuntimeException('上传源视频无效，无法执行转码。');
         }
 
-        $tmpTargetPath = $targetPath . '.tmp.mp4';
+        $tmpTargetPath = self::buildTemporaryTargetPath($targetPath, $config);
         @unlink($tmpTargetPath);
 
         @set_time_limit(0);
@@ -65,6 +66,7 @@ class MediaUtils {
         $command = implode(' ', [
             escapeshellarg($resolvedFfmpegBin),
             '-y',
+            '-nostdin',
             '-hide_banner',
             '-loglevel', 'error',
             '-i', escapeshellarg($sourcePath),
@@ -73,6 +75,7 @@ class MediaUtils {
             '-c:v', 'libx264',
             '-preset', escapeshellarg($preset),
             '-crf', (string)max(18, min(32, $crf)),
+            '-threads', (string)$threads,
             '-pix_fmt', 'yuv420p',
             '-movflags', '+faststart',
             '-c:a', 'aac',
@@ -88,10 +91,81 @@ class MediaUtils {
             throw new \RuntimeException($detail ? ('视频转码失败：' . $detail) : '视频转码失败，请稍后重试。');
         }
 
-        if (!@rename($tmpTargetPath, $targetPath)) {
+        if (!self::moveGeneratedFile($tmpTargetPath, $targetPath)) {
             @unlink($tmpTargetPath);
             throw new \RuntimeException('视频转码完成，但写入上传目录失败。');
         }
+    }
+
+    private static function buildTemporaryTargetPath($targetPath, $config) {
+        $tmpDir = self::resolveVideoTempDir($config);
+        $tmpName = basename((string)$targetPath) . '.' . bin2hex(random_bytes(4)) . '.tmp.mp4';
+        return rtrim($tmpDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $tmpName;
+    }
+
+    private static function resolveVideoTempDir($config) {
+        $tmpDir = trim((string)($config['video_tmp_dir'] ?? ''));
+        if ($tmpDir === '') {
+            $tmpDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'peanut-timeline-video';
+        }
+
+        if (!is_dir($tmpDir) && !@mkdir($tmpDir, 0755, true) && !is_dir($tmpDir)) {
+            throw new \RuntimeException('无法创建本地视频临时目录，暂时无法自动转换当前视频。');
+        }
+
+        if (!is_writable($tmpDir)) {
+            throw new \RuntimeException('本地视频临时目录不可写，暂时无法自动转换当前视频。');
+        }
+
+        return $tmpDir;
+    }
+
+    private static function moveGeneratedFile($sourcePath, $targetPath) {
+        $sourceSize = @filesize($sourcePath);
+        if ($sourceSize === false || (int)$sourceSize <= 0) {
+            return false;
+        }
+
+        if (@rename($sourcePath, $targetPath)) {
+            return self::verifyMovedFileSize($targetPath, $sourceSize);
+        }
+
+        $in = @fopen($sourcePath, 'rb');
+        $out = @fopen($targetPath, 'wb');
+        if ($in === false || $out === false) {
+            if (is_resource($in)) {
+                fclose($in);
+            }
+            if (is_resource($out)) {
+                fclose($out);
+            }
+            return false;
+        }
+
+        try {
+            $copied = stream_copy_to_stream($in, $out);
+        } finally {
+            fclose($in);
+            fclose($out);
+        }
+
+        if ($copied === false || (int)$copied !== (int)$sourceSize) {
+            @unlink($targetPath);
+            return false;
+        }
+
+        if (!self::verifyMovedFileSize($targetPath, $sourceSize)) {
+            @unlink($targetPath);
+            return false;
+        }
+
+        @unlink($sourcePath);
+        return true;
+    }
+
+    private static function verifyMovedFileSize($targetPath, $expectedSize) {
+        $storedSize = @filesize($targetPath);
+        return $storedSize !== false && (int)$storedSize === (int)$expectedSize;
     }
 
     private static function commandExists($command) {

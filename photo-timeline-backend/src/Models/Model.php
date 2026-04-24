@@ -113,7 +113,15 @@ class Model {
      */
     public function query($sql, $params = []) {
         $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($params);
+        foreach ($params as $key => $value) {
+            $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
+            if (is_int($key)) {
+                $stmt->bindValue($key + 1, $value, $type);
+            } else {
+                $stmt->bindValue($key, $value, $type);
+            }
+        }
+        $stmt->execute();
         if (strpos(strtoupper(trim($sql)), 'SELECT') === 0) {
             return $stmt->fetchAll();
         }
