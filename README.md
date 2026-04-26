@@ -251,10 +251,39 @@ npm run build:h5
 
 该文档包含宝塔 + Nginx + PHP 的完整配置步骤（伪静态、权限、前后端部署），并提供“纯宝塔面板操作”流程，不依赖命令行。
 
+## 故障排查
+
+### 管理端提示“密钥无效”
+
+管理端登录会请求 `GET /verify-admin-key`。如果前端提示“密钥无效”，先区分响应状态：
+
+- `403`：管理员密钥不匹配，检查 `.env` 的 `PEANUT_ADMIN_SECRET`。
+- `500`：后端运行错误，前端也可能显示为“密钥无效”。常见原因是 SQLite 数据目录不可写。
+
+SQLite 使用 WAL 时会在数据库同目录创建 `timeline.db-wal` 和 `timeline.db-shm`，所以 `PEANUT_DB_FILE` 指向的目录必须对 PHP-FPM 运行用户可写。宝塔常见 PHP-FPM 用户为 `www`，修复示例：
+
+```bash
+chown -R www:www /www/wwwroot/your-project/data /www/wwwroot/your-project/photo-timeline-backend/uploads
+chmod 775 /www/wwwroot/your-project/data /www/wwwroot/your-project/photo-timeline-backend/uploads
+chmod 664 /www/wwwroot/your-project/data/timeline.db
+```
+
+修复后可用接口验证：
+
+```bash
+curl -k -sS -H "x-api-key: 管理员密钥" https://api.example.com/verify-admin-key
+```
+
+预期返回：
+
+```json
+{"ok":true}
+```
+
 ## 修改记录
 
 - 完整记录见 [CHANGELOG.md](CHANGELOG.md)。
-- 最近一次记录为 `2026-04-24`：补充大视频分片上传、PHP CLI 后台处理、SQLite 外置到 `data/timeline.db`、管理员密钥、上传临时目录、Nginx/PHP 部署限制、地址解析兜底与前端 API 地址说明。
+- 最近一次记录为 `2026-04-27`：补充管理端登录“密钥无效”排障，说明 `500` 可能来自 SQLite 数据目录权限错误，并给出 PHP-FPM 用户权限修复示例。
 
 ## 安全建议
 

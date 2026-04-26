@@ -222,6 +222,20 @@ location ^~ /uploads/ {
 - `data/`：`775`（至少可写，SQLite WAL 会在同目录创建 `-wal` / `-shm` 文件）
 - 分片/视频临时目录：`775`（至少可写，且建议位于本机系统盘）
 
+关键点：
+
+- `data/` 目录和 `timeline.db` 必须属于 PHP-FPM 运行用户，或至少让该用户可写。宝塔常见用户是 `www`。
+- 只让数据库文件可写不够；SQLite WAL 模式还需要在数据库同目录创建 `timeline.db-wal` 和 `timeline.db-shm`。
+- 如果管理端登录提示“密钥无效”，但 `.env` 中的 `PEANUT_ADMIN_SECRET` 确认正确，请先检查 `/verify-admin-key` 是否实际返回 `500`。返回 `500` 且内容包含“数据库目录不可写”时，就是 `data/` 权限问题。
+
+命令行修复示例：
+
+```bash
+chown -R www:www /www/wwwroot/your-project/data /www/wwwroot/your-project/photo-timeline-backend/uploads
+chmod 775 /www/wwwroot/your-project/data /www/wwwroot/your-project/photo-timeline-backend/uploads
+chmod 664 /www/wwwroot/your-project/data/timeline.db
+```
+
 如果 PHP 站点启用了 `open_basedir`，还需要把 `data/` 目录加入允许路径。以当前项目结构为例：
 
 ```ini
@@ -420,6 +434,7 @@ location / {
 ## 九、修改记录
 
 - 完整修改记录见根目录 [CHANGELOG.md](../CHANGELOG.md)。
+- `2026-04-27` 文档补充：管理端登录“密钥无效”可能是后端 `500` 权限错误导致，需检查 `PEANUT_DB_FILE` 所在 `data/` 目录和 SQLite 文件是否对 PHP-FPM 用户可写。
 - `2026-04-24` 部署相关变更：SQLite 数据库外置到 `data/timeline.db`，管理端大视频改为分片上传和 PHP CLI 后台处理，新增分片/待发布/视频临时目录配置，补充 FFmpeg、PHP CLI、`fileinfo`、`.user.ini`、`open_basedir`、Nginx 上传限制与前端静态资源缓存要求。
 - 部署时需重点确认 `PEANUT_DB_FILE`、`PEANUT_ADMIN_SECRET`、`PEANUT_PHP_CLI_BIN`、`PEANUT_CHUNK_TMP_DIR`、`PEANUT_PENDING_UPLOAD_DIR`、`PEANUT_VIDEO_TMP_DIR` 与前端 `API_BASE` 已按实际域名和目录修改。
 
@@ -431,7 +446,15 @@ location / {
 - 用户端只读访问检查 `PEANUT_API_SECRET` 或 `PEANUT_ADMIN_SECRET` 是否与输入一致。
 - 管理端登录、上传、删除、配置修改检查 `PEANUT_ADMIN_SECRET` 是否与输入一致。
 
-### 2. 上传失败 / 数据库只读
+### 2. 管理端提示“密钥无效”，但密钥确认正确
+
+- 管理端登录接口是 `GET /verify-admin-key`。前端当前会把验证异常统一提示为“密钥无效”，所以需要看后端真实状态码。
+- `403` 才是真正的管理员密钥不匹配。
+- `500` 是后端运行错误。若响应内容包含“数据库目录不可写”，检查 `.env` 的 `PEANUT_DB_FILE`、`data/` 目录和 `timeline.db` 权限。
+- 确认 `data/` 目录所有者是 PHP-FPM 用户（宝塔常见为 `www`），或至少对该用户可写。SQLite WAL 会在同目录创建 `timeline.db-wal` 和 `timeline.db-shm`。
+- 修复权限后，用 Apifox/Postman 请求 `GET https://api.example.com/verify-admin-key`，Header 带 `x-api-key: 管理员密钥`，预期返回 `{"ok":true}`。
+
+### 3. 上传失败 / 数据库只读
 
 - 检查后端目录与 `uploads` 权限。
 - 检查 `.env` 的 `PEANUT_DB_FILE` 是否指向可写目录，建议使用后端 Web 根目录外的 `data/timeline.db`。
@@ -445,12 +468,12 @@ location / {
 - 检查 Nginx `client_max_body_size`、PHP `upload_max_filesize`、`post_max_size` 是否大于 5MB 分片和普通上传文件大小。
 - 宝塔/PHP-FPM 环境下如果日志出现 `server reached max_children setting`，说明并发已顶满，需要适当上调对应 PHP 版本 FPM 的 `pm.max_children`。
 
-### 3. 跨域失败
+### 4. 跨域失败
 
 - 检查 `.env` 的 `PEANUT_CORS_ALLOWED_ORIGINS`。
 - 检查 Nginx 是否拦截了 `OPTIONS` 请求。
 
-### 4. 页面行为与预期不一致
+### 5. 页面行为与预期不一致
 
 - 前端更新后请强制刷新浏览器缓存（`Ctrl+F5`）。
 - 若仍异常，确认站点根目录是否指向最新 `dist/build/h5`。
