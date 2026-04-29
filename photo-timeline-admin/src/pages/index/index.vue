@@ -45,14 +45,25 @@
           <view class="upload-area" :class="{ 'has-items': batchList.length > 0 }">
             <!-- 已上传文件预览网格 -->
             <view class="preview-grid" v-if="batchList.length > 0">
-              <view class="preview-item" v-for="(item, index) in batchList" :key="index">
+              <view
+                class="preview-item"
+                :class="{ 'is-processing': item.processing }"
+                v-for="(item, index) in batchList"
+                :key="item.pendingUploadId || item.src || index"
+              >
                 <video
-                  v-if="isVideo(item.src)"
+                  v-if="isVideoPreviewItem(item) && item.src"
                   :src="item.src"
                   class="preview-media"
                   :controls="false"
                   :show-center-play-btn="false"
                 ></video>
+                <view
+                  v-else-if="item.processing"
+                  class="preview-media processing-fallback"
+                >
+                  <text class="processing-fallback-text">{{ item.name || 'video' }}</text>
+                </view>
                 <image
                   v-else
                   :src="item.thumb || item.src"
@@ -61,8 +72,12 @@
                   @click.stop="previewImage(item.src)"
                 ></image>
                 <view class="preview-remove" @click.stop="removeFromBatch(index)">✕</view>
-                <view class="video-badge" v-if="isVideo(item.src)">
-                  <text class="video-badge-text">VIDEO</text>
+                <view class="preview-processing" v-if="item.processing">
+                  <view class="processing-spinner"></view>
+                  <text class="processing-text">后台处理中</text>
+                </view>
+                <view class="video-badge" v-if="isVideoPreviewItem(item)">
+                  <text class="video-badge-text">{{ item.processing ? '处理中' : 'VIDEO' }}</text>
                 </view>
               </view>
               <!-- 添加更多 -->
@@ -119,7 +134,7 @@
           <text>退出后需重新访问链接登录。</text>
         </view>
         <view class="hint" v-if="pendingServerUploadCount > 0">
-          <text>有 {{ pendingServerUploadCount }} 个视频正在后台处理中，处理完成后会自动加入待发布列表。</text>
+          <text>有 {{ pendingServerUploadCount }} 个视频正在后台处理中，完成后会自动替换待发布列表中的占位项。</text>
         </view>
       </view>
 
@@ -542,6 +557,7 @@ const adminKey = ref('');
 const pendingCleanupUrls = ref([]);
 const pendingServerUploadCount = ref(0);
 const pendingUploadBatchToken = ref(0);
+let pendingUploadPlaceholderSeq = 0;
 
 // 搜索状态
 const searchQuery = ref('');
@@ -1091,11 +1107,32 @@ const invalidatePendingUploadBatch = () => {
 
 const isPendingUploadBatchActive = (token) => pendingUploadBatchToken.value === token;
 
+const revokeBatchItemLocalPreview = (item) => {
+    if (item && item.localPreviewUrl) {
+        revokeBlobUrl(item.localPreviewUrl);
+    }
+};
+
+const findPendingBatchIndex = (pendingUploadId) => {
+    if (!pendingUploadId) return -1;
+    return batchList.value.findIndex((item) => item && item.pendingUploadId === pendingUploadId);
+};
+
+const removePendingBatchPlaceholder = (pendingUploadId) => {
+    const index = findPendingBatchIndex(pendingUploadId);
+    if (index < 0) return false;
+
+    const [removed] = batchList.value.splice(index, 1);
+    revokeBatchItemLocalPreview(removed);
+    return true;
+};
+
 // ==================== 文件上传 ====================
 
 const clearSelection = async () => {
     invalidatePendingUploadBatch();
     const urls = collectBatchCleanupUrls(batchList.value);
+    batchList.value.forEach(revokeBatchItemLocalPreview);
     batchList.value = [];
     persistPendingCleanupUrls();
     if (urls.length > 0) {
@@ -1109,6 +1146,7 @@ const clearSelection = async () => {
 
 const removeFromBatch = async (index) => {
     const [removed] = batchList.value.splice(index, 1);
+    revokeBatchItemLocalPreview(removed);
     const urls = collectBatchCleanupUrls(removed ? [removed] : []);
     persistPendingCleanupUrls();
     if (urls.length > 0) {
@@ -1181,6 +1219,11 @@ const shouldUseChunkUpload = (item) => {
     return !!(fileObj && typeof fileObj.slice === 'function' && Number(fileObj.size || 0) >= LARGE_VIDEO_THRESHOLD_BYTES);
 };
 
+const isVideoPreviewItem = (item) => {
+    if (!item || typeof item !== 'object') return false;
+    return item.mediaType === 'video' || item.processing === true || isVideo(item.src);
+};
+
 const uploadOneFile = async (item, index = 0, total = 1) => {
     const filePath = typeof item === 'string' ? item : (item.path || item.src);
     const fileObj = typeof item === 'string' ? null : item.file;
@@ -1213,11 +1256,48 @@ const uploadOneFile = async (item, index = 0, total = 1) => {
     }
 };
 
-const appendUploadedMediaToBatch = async (data, sourceItem, apiKey, batchToken = pendingUploadBatchToken.value) => {
+const getSourceItemName = (sourceItem) => {
+    if (!sourceItem || typeof sourceItem !== 'object') return 'media';
+    const fileObj = sourceItem.file;
+    return (fileObj && fileObj.name) || sourceItem.name || 'media';
+};
+
+const createProcessingBatchItem = (processingData, sourceItem) => {
+    const pendingUploadId = `pending-${Date.now()}-${++pendingUploadPlaceholderSeq}`;
+    const previewUrl = sourceItem && typeof sourceItem === 'object' ? (sourceItem.path || '') : '';
+
+    batchList.value.push({
+        src: previewUrl,
+        thumb: '',
+        name: getSourceItemName(sourceItem),
+        exif: sourceItem && typeof sourceItem === 'object' ? sourceItem.clientExif : null,
+        cleanupUrls: [],
+        processing: true,
+        pendingUploadId,
+        uploadId: processingData && processingData.uploadId,
+        localPreviewUrl: previewUrl,
+        mediaType: 'video'
+    });
+
+    return pendingUploadId;
+};
+
+const appendUploadedMediaToBatch = async (
+    data,
+    sourceItem,
+    apiKey,
+    batchToken = pendingUploadBatchToken.value,
+    options = {}
+) => {
     if (!data || !data.url) {
         throw new Error('上传结果无效');
     }
     if (!isPendingUploadBatchActive(batchToken)) {
+        return false;
+    }
+
+    const replacePendingUploadId = options && options.replacePendingUploadId;
+    if (replacePendingUploadId && findPendingBatchIndex(replacePendingUploadId) < 0) {
         return false;
     }
 
@@ -1234,6 +1314,9 @@ const appendUploadedMediaToBatch = async (data, sourceItem, apiKey, batchToken =
                     frameUrl = URL.createObjectURL(frameFile);
                     const thumbData = await api.uploadFile(apiKey, frameUrl, frameFile, null, { skipThumb: true });
                     data.thumb = thumbData.url;
+                    if (!isPendingUploadBatchActive(batchToken)) {
+                        return false;
+                    }
                 } catch (e) {
                     // 截帧上传失败不影响主流程
                 } finally {
@@ -1246,18 +1329,31 @@ const appendUploadedMediaToBatch = async (data, sourceItem, apiKey, batchToken =
     const cleanupUrls = normalizeCleanupUrls([data.url, data.thumb]);
     registerPendingCleanupUrls(cleanupUrls);
 
-    batchList.value.push({
+    const batchItem = {
         src: data.url,
         thumb: data.thumb,
         name: data.filename || 'media',
         exif: data.exif,
-        cleanupUrls
-    });
+        cleanupUrls,
+        mediaType: isVideo(data.url) ? 'video' : 'image'
+    };
+
+    if (replacePendingUploadId) {
+        const replaceIndex = findPendingBatchIndex(replacePendingUploadId);
+        if (replaceIndex < 0) {
+            return false;
+        }
+
+        revokeBatchItemLocalPreview(batchList.value[replaceIndex]);
+        batchList.value.splice(replaceIndex, 1, batchItem);
+    } else {
+        batchList.value.push(batchItem);
+    }
 
     return true;
 };
 
-const waitForBackgroundProcessedUpload = async (processingData, sourceItem, apiKey, batchToken) => {
+const waitForBackgroundProcessedUpload = async (processingData, sourceItem, apiKey, batchToken, pendingUploadId) => {
     pendingServerUploadCount.value += 1;
     try {
         const completedData = await api.waitForLargeUploadProcessing(
@@ -1273,7 +1369,13 @@ const waitForBackgroundProcessedUpload = async (processingData, sourceItem, apiK
             return;
         }
 
-        const appended = await appendUploadedMediaToBatch(completedData, sourceItem, apiKey, batchToken);
+        const appended = await appendUploadedMediaToBatch(
+            completedData,
+            sourceItem,
+            apiKey,
+            batchToken,
+            { replacePendingUploadId: pendingUploadId }
+        );
         if (!appended) {
             await cleanupUploadedUrls([completedData && completedData.url, completedData && completedData.thumb], {
                 silent: true
@@ -1282,6 +1384,7 @@ const waitForBackgroundProcessedUpload = async (processingData, sourceItem, apiK
         }
         uni.showToast({ title: '视频处理完成', icon: 'none' });
     } catch (error) {
+        removePendingBatchPlaceholder(pendingUploadId);
         if (!handleAdminAuthFailure(error)) {
             uni.showToast({ title: error.message || '视频处理失败', icon: 'none' });
         }
@@ -1309,7 +1412,8 @@ const handleBatchUpload = async (filePaths) => {
                 const data = await uploadOneFile(sourceItem, i + 1, filePaths.length);
                 if (data && data.processing) {
                     keepSourceItemForBackground = true;
-                    waitForBackgroundProcessedUpload(data, sourceItem, requestApiKey, batchToken);
+                    const pendingUploadId = createProcessingBatchItem(data, sourceItem);
+                    waitForBackgroundProcessedUpload(data, sourceItem, requestApiKey, batchToken, pendingUploadId);
                     continue;
                 }
 
@@ -2293,10 +2397,32 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line);
 }
 
+.preview-item.is-processing .preview-media {
+  filter: brightness(0.62);
+}
+
 .preview-media {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.processing-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  box-sizing: border-box;
+  background: rgba(36, 31, 30, 0.7);
+}
+
+.processing-fallback-text {
+  max-width: 100%;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+  word-break: break-all;
 }
 
 .preview-remove {
@@ -2331,6 +2457,41 @@ onBeforeUnmount(() => {
   color: #fff;
   font-weight: 600;
   letter-spacing: 0.5px;
+}
+
+.preview-processing {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.processing-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: upload-processing-spin 0.9s linear infinite;
+}
+
+.processing-text {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+@keyframes upload-processing-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .add-more-card {

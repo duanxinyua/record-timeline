@@ -11,16 +11,25 @@ class MediaUtils {
     }
 
     public static function shouldTranscodeUpload($filepath, $ext) {
+        return self::getBrowserMp4SaveMode($filepath, $ext) === 'transcode';
+    }
+
+    public static function getBrowserMp4SaveMode($filepath, $ext) {
         $ext = strtolower((string)$ext);
         if (!self::isVideoExtension($ext)) {
-            return false;
+            return 'move';
         }
 
-        if ($ext !== 'mp4') {
-            return true;
+        $codec = self::detectIsoBmffVideoCodec($filepath);
+        if ($ext === 'mp4' && $codec === 'avc1') {
+            return 'move';
         }
 
-        return self::detectIsoBmffVideoCodec($filepath) !== 'avc1';
+        if (in_array($ext, self::ISO_BMFF_VIDEO_EXTS, true) && $codec === 'avc1') {
+            return 'remux';
+        }
+
+        return 'transcode';
     }
 
     public static function detectIsoBmffVideoCodec($filepath) {
@@ -94,6 +103,53 @@ class MediaUtils {
         if (!self::moveGeneratedFile($tmpTargetPath, $targetPath)) {
             @unlink($tmpTargetPath);
             throw new \RuntimeException('视频转码完成，但写入上传目录失败。');
+        }
+    }
+
+    public static function remuxToBrowserMp4($sourcePath, $targetPath, $config) {
+        $ffmpegBin = (string)($config['ffmpeg_bin'] ?? 'ffmpeg');
+
+        $resolvedFfmpegBin = self::resolveCommandPath($ffmpegBin);
+        if ($resolvedFfmpegBin === null) {
+            throw new \RuntimeException('服务器未安装 ffmpeg，暂时无法自动转换当前视频。');
+        }
+
+        if (!is_string($sourcePath) || $sourcePath === '' || !is_file($sourcePath) || !is_readable($sourcePath)) {
+            throw new \RuntimeException('上传源视频无效，无法执行封装转换。');
+        }
+
+        $tmpTargetPath = self::buildTemporaryTargetPath($targetPath, $config);
+        @unlink($tmpTargetPath);
+
+        @set_time_limit(0);
+
+        $command = implode(' ', [
+            escapeshellarg($resolvedFfmpegBin),
+            '-y',
+            '-nostdin',
+            '-hide_banner',
+            '-loglevel', 'error',
+            '-i', escapeshellarg($sourcePath),
+            '-map', '0:v:0',
+            '-map', '0:a?',
+            '-c:v', 'copy',
+            '-movflags', '+faststart',
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            escapeshellarg($tmpTargetPath),
+        ]);
+
+        [$output, $exitCode] = self::runCommand($command);
+
+        if ($exitCode !== 0 || !is_file($tmpTargetPath) || (int)@filesize($tmpTargetPath) <= 0) {
+            @unlink($tmpTargetPath);
+            $detail = self::summarizeOutput($output);
+            throw new \RuntimeException($detail ? ('视频封装转换失败：' . $detail) : '视频封装转换失败，请稍后重试。');
+        }
+
+        if (!self::moveGeneratedFile($tmpTargetPath, $targetPath)) {
+            @unlink($tmpTargetPath);
+            throw new \RuntimeException('视频封装转换完成，但写入上传目录失败。');
         }
     }
 

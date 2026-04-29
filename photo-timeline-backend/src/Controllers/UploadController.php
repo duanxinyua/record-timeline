@@ -443,11 +443,19 @@ class UploadController {
 
         if ($isVideo) {
             try {
-                if (MediaUtils::shouldTranscodeUpload($sourcePath, $ext)) {
-                    MediaUtils::transcodeToBrowserMp4($sourcePath, $targetPath, $this->config);
+                $saveMode = MediaUtils::getBrowserMp4SaveMode($sourcePath, $ext);
+                if ($saveMode === 'move') {
+                    $saved = $this->moveSourceFile($sourcePath, $targetPath, $isUploadedFile);
+                } elseif ($saveMode === 'remux') {
+                    try {
+                        MediaUtils::remuxToBrowserMp4($sourcePath, $targetPath, $this->config);
+                    } catch (\RuntimeException $e) {
+                        MediaUtils::transcodeToBrowserMp4($sourcePath, $targetPath, $this->config);
+                    }
                     $saved = true;
                 } else {
-                    $saved = $this->moveSourceFile($sourcePath, $targetPath, $isUploadedFile);
+                    MediaUtils::transcodeToBrowserMp4($sourcePath, $targetPath, $this->config);
+                    $saved = true;
                 }
             } catch (\RuntimeException $e) {
                 $saveError = $e->getMessage();
