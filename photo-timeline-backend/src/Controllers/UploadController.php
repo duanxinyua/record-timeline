@@ -40,6 +40,11 @@ class UploadController {
         'video/3gpp' => '3gp',
         'video/x-m4v' => 'm4v',
     ];
+    private const GENERIC_UPLOAD_MIME_TYPES = [
+        'application/octet-stream',
+        'binary/octet-stream',
+    ];
+    private const IMAGE_THUMBNAIL_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
 
     protected $config;
     protected $model;
@@ -473,10 +478,34 @@ class UploadController {
         $exifData = $this->extractExifData($targetPath, $storedExt, $requestData);
 
         $thumbUrl = null;
-        if (!$skipThumb && in_array($storedExt, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'], true)) {
+        if (!$skipThumb && (in_array($storedExt, self::IMAGE_THUMBNAIL_EXTS, true) || $isVideo)) {
             $thumbFilename = $baseId . '_thumb.jpg';
             $thumbPath = rtrim($this->config['upload_dir'], '/') . '/' . $thumbFilename;
-            if (ImageUtils::createThumbnail($targetPath, $thumbPath, $this->config['thumb_max_width'], $this->config['thumb_quality'])) {
+
+            $thumbCreated = false;
+            if (in_array($storedExt, self::IMAGE_THUMBNAIL_EXTS, true)) {
+                $thumbCreated = ImageUtils::createThumbnail(
+                    $targetPath,
+                    $thumbPath,
+                    $this->config['thumb_max_width'],
+                    $this->config['thumb_quality']
+                );
+            } elseif ($isVideo) {
+                try {
+                    $thumbCreated = MediaUtils::createVideoThumbnail(
+                        $targetPath,
+                        $thumbPath,
+                        $this->config,
+                        $this->config['thumb_max_width'],
+                        $this->config['thumb_quality']
+                    );
+                } catch (\RuntimeException $e) {
+                    error_log('Video thumbnail generation failed: ' . $e->getMessage());
+                    $thumbCreated = false;
+                }
+            }
+
+            if ($thumbCreated) {
                 $thumbUrl = ImageUtils::buildUploadUrl($thumbFilename, $this->config['base_url']);
             }
         }
@@ -502,24 +531,95 @@ class UploadController {
     private function resolveStoredExtension($originalName, $sourcePath) {
         $ext = strtolower((string)pathinfo((string)$originalName, PATHINFO_EXTENSION));
         $allowedExts = array_unique(array_values(self::MIME_MAP));
+        $mime = $this->detectUploadedMimeType($sourcePath);
 
-        if ($ext !== '' && in_array($ext, $allowedExts, true)) {
-            return $ext;
+        if ($mime !== null && isset(self::MIME_MAP[$mime])) {
+            return self::MIME_MAP[$mime];
         }
 
-        if (function_exists('finfo_open')) {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mime = finfo_file($finfo, $sourcePath);
-            finfo_close($finfo);
-
-            if (isset(self::MIME_MAP[$mime])) {
-                return self::MIME_MAP[$mime];
-            }
-
+        if ($mime !== null && !$this->isGenericUploadMime($mime)) {
             throw new \RuntimeException('不支持的文件类型: ' . $mime, 400);
         }
 
+        if ($ext !== '' && in_array($ext, $allowedExts, true) && $this->hasAllowedMediaSignature($sourcePath, $ext)) {
+            return $ext;
+        }
+
         throw new \RuntimeException('不支持的文件类型: .' . $ext, 400);
+    }
+
+    private function detectUploadedMimeType($sourcePath) {
+        if (!function_exists('finfo_open')) {
+            return null;
+        }
+
+        $finfo = @finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo === false) {
+            return null;
+        }
+
+        $mime = @finfo_file($finfo, $sourcePath);
+        @finfo_close($finfo);
+
+        $mime = is_string($mime) ? strtolower(trim($mime)) : '';
+        return $mime === '' ? null : $mime;
+    }
+
+    private function isGenericUploadMime($mime) {
+        return in_array(strtolower((string)$mime), self::GENERIC_UPLOAD_MIME_TYPES, true);
+    }
+
+    private function hasAllowedMediaSignature($sourcePath, $ext) {
+        $header = @file_get_contents($sourcePath, false, null, 0, 64);
+        if (!is_string($header) || $header === '') {
+            return false;
+        }
+
+        $ext = strtolower((string)$ext);
+        switch ($ext) {
+            case 'jpg':
+            case 'jpeg':
+                return substr($header, 0, 3) === "\xFF\xD8\xFF";
+            case 'png':
+                return substr($header, 0, 8) === "\x89PNG\r\n\x1A\n";
+            case 'gif':
+                return substr($header, 0, 6) === 'GIF87a' || substr($header, 0, 6) === 'GIF89a';
+            case 'webp':
+                return substr($header, 0, 4) === 'RIFF' && substr($header, 8, 4) === 'WEBP';
+            case 'bmp':
+                return substr($header, 0, 2) === 'BM';
+            case 'tiff':
+                return substr($header, 0, 4) === "II*\x00" || substr($header, 0, 4) === "MM\x00*";
+            case 'heic':
+            case 'heif':
+                return $this->hasIsoBmffBrand($header, ['heic', 'heix', 'hevc', 'hevx', 'heif', 'mif1', 'msf1']);
+            case 'mp4':
+            case 'mov':
+            case 'm4v':
+            case '3gp':
+                return $this->hasIsoBmffBrand($header, ['isom', 'iso2', 'mp41', 'mp42', 'avc1', 'hvc1', 'M4V ', 'M4A ', 'qt  ', '3gp4', '3gp5', '3g2a']);
+            case 'webm':
+                return substr($header, 0, 4) === "\x1A\x45\xDF\xA3";
+            case 'avi':
+                return substr($header, 0, 4) === 'RIFF' && substr($header, 8, 4) === 'AVI ';
+            default:
+                return false;
+        }
+    }
+
+    private function hasIsoBmffBrand($header, array $brands) {
+        if (!is_string($header) || strlen($header) < 12 || substr($header, 4, 4) !== 'ftyp') {
+            return false;
+        }
+
+        $brandBlock = substr($header, 8);
+        foreach ($brands as $brand) {
+            if (strpos($brandBlock, $brand) !== false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function moveSourceFile($sourcePath, $targetPath, $isUploadedFile) {
@@ -1140,24 +1240,31 @@ class UploadController {
 
         $configured = trim((string)($this->config['php_cli_bin'] ?? ''));
         if ($configured !== '') {
-            $candidates[] = $configured;
+            $candidates[] = [$configured, true];
         }
 
         if (defined('PHP_BINDIR')) {
-            $candidates[] = rtrim((string)PHP_BINDIR, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'php';
+            $candidates[] = [rtrim((string)PHP_BINDIR, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'php', false];
         }
 
         if (defined('PHP_BINARY')) {
             $phpBinaryName = strtolower(basename((string)PHP_BINARY));
             if ($phpBinaryName !== '' && strpos($phpBinaryName, 'fpm') === false) {
-                $candidates[] = PHP_BINARY;
+                $candidates[] = [PHP_BINARY, false];
             }
         }
 
-        $candidates[] = 'php';
+        $candidates[] = ['php', false];
 
-        foreach (array_values(array_unique($candidates)) as $candidate) {
-            $resolved = $this->resolveCommandPath($candidate);
+        $seen = [];
+        foreach ($candidates as $candidateData) {
+            [$candidate, $allowOpenBasedirRestrictedAbsolute] = $candidateData;
+            if (isset($seen[$candidate])) {
+                continue;
+            }
+            $seen[$candidate] = true;
+
+            $resolved = $this->resolveCommandPath($candidate, $allowOpenBasedirRestrictedAbsolute);
             if ($resolved !== null) {
                 return $resolved;
             }
@@ -1166,14 +1273,22 @@ class UploadController {
         return null;
     }
 
-    private function resolveCommandPath($command) {
+    private function resolveCommandPath($command, $allowOpenBasedirRestrictedAbsolute = false) {
         $command = trim((string)$command);
         if ($command === '') {
             return null;
         }
 
         if (strpos($command, DIRECTORY_SEPARATOR) !== false || preg_match('/^[A-Za-z]:[\\\\\\/]/', $command) === 1) {
-            return (@is_file($command) && @is_executable($command)) ? $command : null;
+            if (@is_file($command) && @is_executable($command)) {
+                return $command;
+            }
+
+            if ($allowOpenBasedirRestrictedAbsolute && $this->isOpenBasedirRestrictedPath($command)) {
+                return $command;
+            }
+
+            return null;
         }
 
         $pathEnv = getenv('PATH');
@@ -1194,6 +1309,26 @@ class UploadController {
         }
 
         return null;
+    }
+
+    private function isOpenBasedirRestrictedPath($path) {
+        $openBasedir = ini_get('open_basedir');
+        if (!is_string($openBasedir) || trim($openBasedir) === '') {
+            return false;
+        }
+
+        foreach (explode(PATH_SEPARATOR, $openBasedir) as $allowedRoot) {
+            $allowedRoot = rtrim(trim($allowedRoot), "\\/");
+            if ($allowedRoot === '') {
+                continue;
+            }
+
+            if (strpos($path, $allowedRoot . DIRECTORY_SEPARATOR) === 0 || $path === $allowedRoot) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function getLocalProcessingRoot() {

@@ -1211,12 +1211,42 @@ const showUploadLoading = (current, total, extra = '') => {
     uni.showLoading({ title: `上传 ${current}/${total}${suffix}` });
 };
 
-const shouldUseChunkUpload = (item) => {
-    if (!item || typeof item !== 'object') return false;
-    if (item.type !== 'video') return false;
+const getUploadItemMediaType = (item) => {
+    if (typeof item === 'string') {
+        return isVideo(item) ? 'video' : 'image';
+    }
+    if (!item || typeof item !== 'object') {
+        return 'image';
+    }
+
+    const explicitType = String(item.type || item.fileType || item.mediaType || '').toLowerCase();
+    if (explicitType.includes('video')) return 'video';
+    if (explicitType.includes('image')) return 'image';
 
     const fileObj = item.file;
-    return !!(fileObj && typeof fileObj.slice === 'function' && Number(fileObj.size || 0) >= LARGE_VIDEO_THRESHOLD_BYTES);
+    const mimeType = String((fileObj && fileObj.type) || item.mimeType || '').toLowerCase();
+    if (mimeType.startsWith('video/')) return 'video';
+    if (mimeType.startsWith('image/')) return 'image';
+
+    return isVideo(item.path || item.src || item.tempFilePath || '') ? 'video' : 'image';
+};
+
+const getUploadItemSize = (item) => {
+    if (!item || typeof item !== 'object') return 0;
+    const fileObj = item.file;
+    return Number((fileObj && fileObj.size) || item.size || 0);
+};
+
+const isLargeVideoUploadItem = (item) => {
+    return getUploadItemMediaType(item) === 'video' && getUploadItemSize(item) >= LARGE_VIDEO_THRESHOLD_BYTES;
+};
+
+const shouldUseChunkUpload = (item) => {
+    if (!item || typeof item !== 'object') return false;
+    if (!isLargeVideoUploadItem(item)) return false;
+
+    const fileObj = item.file;
+    return !!(fileObj && typeof fileObj.slice === 'function');
 };
 
 const isVideoPreviewItem = (item) => {
@@ -1231,7 +1261,11 @@ const uploadOneFile = async (item, index = 0, total = 1) => {
 
     try {
         let data;
-        if (shouldUseChunkUpload(item)) {
+        if (isLargeVideoUploadItem(item)) {
+            if (!shouldUseChunkUpload(item)) {
+                throw new Error('当前端不支持大视频分片，请使用浏览器管理端上传 50MB 以上视频');
+            }
+
             showUploadLoading(index, total, '分片初始化');
             data = await api.uploadLargeVideoInChunks(
                 adminKey.value,
@@ -1475,6 +1509,31 @@ const triggerH5Input = (sourceType, mediaType) => {
     // #endif
 };
 
+const getPathFilename = (path) => {
+    const value = String(path || '').split('?')[0].split('#')[0];
+    const parts = value.split(/[\\/]/);
+    return parts[parts.length - 1] || 'media';
+};
+
+const normalizeChooseMediaFile = (fileInfo, fallbackType = '') => {
+    const filePath = typeof fileInfo === 'string'
+        ? fileInfo
+        : (fileInfo.tempFilePath || fileInfo.path || '');
+    const rawType = typeof fileInfo === 'object'
+        ? (fileInfo.fileType || fileInfo.type || fallbackType)
+        : fallbackType;
+    const normalizedType = String(rawType || '').toLowerCase();
+    const mediaType = normalizedType.includes('video') || isVideo(filePath) ? 'video' : 'image';
+
+    return {
+        path: filePath,
+        type: mediaType,
+        size: Number((fileInfo && fileInfo.size) || 0),
+        name: (fileInfo && fileInfo.name) || getPathFilename(filePath),
+        clientExif: null
+    };
+};
+
 const chooseMedia = () => {
     if (!isAdmin.value) return;
 
@@ -1484,8 +1543,9 @@ const chooseMedia = () => {
         mediaType: ['image', 'video'],
         sourceType: ['album', 'camera'],
         success: (res) => {
-            const urls = res.tempFiles.map(f => f.tempFilePath);
-            handleBatchUpload(urls);
+            const selectedType = res.type || '';
+            const items = res.tempFiles.map(f => normalizeChooseMediaFile(f, selectedType));
+            handleBatchUpload(items);
         }
     });
     // #endif

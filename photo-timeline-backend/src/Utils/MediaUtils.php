@@ -153,10 +153,58 @@ class MediaUtils {
         }
     }
 
+    public static function createVideoThumbnail($sourcePath, $targetPath, $config, $maxWidth = 800, $quality = 82) {
+        $ffmpegBin = (string)($config['ffmpeg_bin'] ?? 'ffmpeg');
+        $resolvedFfmpegBin = self::resolveCommandPath($ffmpegBin);
+        if ($resolvedFfmpegBin === null) {
+            return false;
+        }
+
+        if (!is_string($sourcePath) || $sourcePath === '' || !is_file($sourcePath) || !is_readable($sourcePath)) {
+            return false;
+        }
+
+        $maxWidth = max(120, min(1920, (int)$maxWidth));
+        $jpegQuality = max(2, min(8, (int)round((100 - max(1, min(100, (int)$quality))) / 12) + 2));
+        $tmpTargetPath = self::buildTemporaryImageTargetPath($targetPath);
+        @unlink($tmpTargetPath);
+
+        @set_time_limit(0);
+
+        foreach (['1', '0'] as $seekSeconds) {
+            $command = implode(' ', [
+                escapeshellarg($resolvedFfmpegBin),
+                '-y',
+                '-nostdin',
+                '-hide_banner',
+                '-loglevel', 'error',
+                '-ss', escapeshellarg($seekSeconds),
+                '-i', escapeshellarg($sourcePath),
+                '-frames:v', '1',
+                '-vf', escapeshellarg('scale=min(' . $maxWidth . '\\,iw):-2'),
+                '-q:v', (string)$jpegQuality,
+                escapeshellarg($tmpTargetPath),
+            ]);
+
+            [$output, $exitCode] = self::runCommand($command);
+            if ($exitCode === 0 && is_file($tmpTargetPath) && (int)@filesize($tmpTargetPath) > 0) {
+                return self::moveGeneratedFile($tmpTargetPath, $targetPath);
+            }
+
+            @unlink($tmpTargetPath);
+        }
+
+        return false;
+    }
+
     private static function buildTemporaryTargetPath($targetPath, $config) {
         $tmpDir = self::resolveVideoTempDir($config);
         $tmpName = basename((string)$targetPath) . '.' . bin2hex(random_bytes(4)) . '.tmp.mp4';
         return rtrim($tmpDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $tmpName;
+    }
+
+    private static function buildTemporaryImageTargetPath($targetPath) {
+        return (string)$targetPath . '.' . bin2hex(random_bytes(4)) . '.tmp.jpg';
     }
 
     private static function resolveVideoTempDir($config) {
