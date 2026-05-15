@@ -35,6 +35,7 @@ project-root/
 - 年/月两级折叠；默认只展开最新月份，最新月份不足 5 条会自动补拉上一月到至少 5 条（或无更多数据）
 - 年/月后缀显示动态总数（全量统计，不受当前分页加载数量影响）
 - 图片预览支持左右滑动，并采用懒加载（只渲染当前与相邻图片）
+- 用户端与管理端配置独立浏览器标签页图标，包含 32x32、64x64 与 Apple Touch Icon
 - 管理端支持软删除、恢复、彻底删除、清空回收站
 - 管理端回收站“彻底删除/清空”使用页面内确认弹窗，避免层级遮挡
 - 全局文案与分页参数可在线配置（`/config`）
@@ -156,6 +157,28 @@ npm run build:h5
 
 - `photo-timeline-admin/dist/build/h5`
 - `photo-timeline-uniapp/dist/build/h5`
+
+## 浏览器标签页图标
+
+两个 H5 项目的浏览器标签页图标资产分别放在：
+
+- `photo-timeline-admin/src/static/favicon-32.png`
+- `photo-timeline-admin/src/static/favicon-64.png`
+- `photo-timeline-admin/src/static/apple-touch-icon.png`
+- `photo-timeline-uniapp/src/static/favicon-32.png`
+- `photo-timeline-uniapp/src/static/favicon-64.png`
+- `photo-timeline-uniapp/src/static/apple-touch-icon.png`
+
+两个项目的 `index.html` 使用相同引用：
+
+```html
+<link rel="icon" type="image/png" sizes="32x32" href="./static/favicon-32.png?v=20260515r2" />
+<link rel="icon" type="image/png" sizes="64x64" href="./static/favicon-64.png?v=20260515r2" />
+<link rel="shortcut icon" type="image/png" href="./static/favicon-32.png?v=20260515r2" />
+<link rel="apple-touch-icon" sizes="180x180" href="./static/apple-touch-icon.png?v=20260515r2" />
+```
+
+图标文件为圆角 RGBA PNG。替换图标时只提交 `src/static` 下的小尺寸图标文件，不提交仓库根目录导出的高清源图、SVG 或临时图片。
 
 ## 前端 API 地址
 
@@ -283,7 +306,7 @@ curl -k -sS -H "x-api-key: 管理员密钥" https://api.example.com/verify-admin
 ## 修改记录
 
 - 完整记录见 [CHANGELOG.md](CHANGELOG.md)。
-- 最近一次记录为 `2026-04-27`：补充管理端登录“密钥无效”排障，说明 `500` 可能来自 SQLite 数据目录权限错误，并给出 PHP-FPM 用户权限修复示例。
+- 最近一次记录为 `2026-05-15`：用户端与管理端新增圆角浏览器标签页图标。
 
 ## 安全建议
 
@@ -296,6 +319,8 @@ curl -k -sS -H "x-api-key: 管理员密钥" https://api.example.com/verify-admin
 photo-timeline-backend/config.php
 data/timeline.db*
 photo-timeline-backend/uploads/
+image_GPT_yuan.svg
+/*.png
 ```
 
 ## 开发说明

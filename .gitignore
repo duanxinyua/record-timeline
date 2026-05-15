@@ -17,6 +17,10 @@ update-git-and-backend-perms.sh
 .idea/
 .vscode/
 
+# Local exported source images
+/image_GPT_yuan.svg
+/*.png
+
 # Project Data
 photo-timeline-backend/uploads/
 photo-timeline-backend/timeline.db
