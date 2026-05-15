@@ -53,3 +53,4 @@ photo-timeline-uniapp/dist/
 
 # Local deployment helpers
 sync-photo-timeline-new-only.sh
+build-photo-timeline-h5.sh
